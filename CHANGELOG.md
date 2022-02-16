@@ -1,19 +1,35 @@
 ## CHANGELOG
-
 ### 6.0-SNAPSHOT
 
 #### Bugs
-* Fix #3776: VerticalPodAutoscaler cannot load yaml with "controlledResources"
+* Fix #3848: Supports Queue (cluster) API for Volcano extension
+* Fix #3582: SSL truststore can be loaded in FIPS enabled environments
 
 #### Improvements
+* Fix #3811: Reintroduce `Replaceable` interface in `NonNamespaceOperation`
+* Remove `setIntVal`, `setStrVal`, `setKind` setters from `IntOrString` class to avoid invalid combinations
 
 #### Dependency Upgrade
-
 * Fix #3788: Point CamelK Extension model to latest released version v1.8.0
+* Fix #3813: Handle exit code status messages with pod uploads
 
 #### New Features
 
 #### _**Note**_: Breaking changes in the API
+* Refactoring #3654: 
+    * Removed deprecated KubernetesClient.customResource / RawCustomResourceOperationsImpl, please use the generic resource api instead 
+    * Removed deprecatedHttpClientUtils.createHttpClient(final Config config, final Consumer<OkHttpClient.Builder> additionalConfig), please use the OkHttpClientFactory instead
+    * Removed deprecated methods on SharedInformerFactory dealing with the OperationContext
+* Refactoring #2838: Readiness/OpenShiftReadiness moved from client.internal.readiness to client.readiness
+
+### 5.12.1 (2022-02-04)
+
+#### Bugs
+* Fix #3786: Deserialize WatchEvents using the specific object type
+* Fix #3776: VerticalPodAutoscaler cannot load yaml with "controlledResources"
+* Fix #3796: Limit usage of YAML Serializer
+* Fix #3772: `edit()` should not be allowed as a NonNamespaceOperation
+* Fix #3477: Handle exit code status messages with pod uploads
 
 ### 5.12.0 (2022-01-24)
 

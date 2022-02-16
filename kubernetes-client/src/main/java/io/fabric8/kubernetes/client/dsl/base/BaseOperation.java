@@ -55,7 +55,7 @@ import io.fabric8.kubernetes.client.informers.ListerWatcher;
 import io.fabric8.kubernetes.client.informers.ResourceEventHandler;
 import io.fabric8.kubernetes.client.informers.SharedIndexInformer;
 import io.fabric8.kubernetes.client.informers.impl.DefaultSharedIndexInformer;
-import io.fabric8.kubernetes.client.internal.readiness.Readiness;
+import io.fabric8.kubernetes.client.readiness.Readiness;
 import io.fabric8.kubernetes.client.utils.URLUtils;
 import io.fabric8.kubernetes.client.utils.URLUtils.URLBuilder;
 import io.fabric8.kubernetes.client.utils.Utils;
@@ -600,8 +600,7 @@ public class BaseOperation<T extends HasMetadata, L extends KubernetesResourceLi
           options,
           watcher,
           config.getWatchReconnectInterval(),
-          config.getWatchReconnectLimit(),
-          config.getConnectionTimeout()
+          config.getWatchReconnectLimit()
         );
       } catch (MalformedURLException e) {
         throw KubernetesClientException.launderThrowable(forOperationType(WATCH), e);
