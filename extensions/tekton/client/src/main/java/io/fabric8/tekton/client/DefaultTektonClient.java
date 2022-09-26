@@ -15,17 +15,18 @@
  */
 package io.fabric8.tekton.client;
 
-import io.fabric8.kubernetes.client.BaseClient;
-import io.fabric8.kubernetes.client.ClientContext;
+import io.fabric8.kubernetes.client.Client;
 import io.fabric8.kubernetes.client.Config;
-import io.fabric8.kubernetes.client.ConfigBuilder;
 import io.fabric8.kubernetes.client.RequestConfig;
 import io.fabric8.kubernetes.client.WithRequestCallable;
 import io.fabric8.kubernetes.client.dsl.FunctionCallable;
+import io.fabric8.kubernetes.client.extension.ExtensionRootClientAdapter;
+import io.fabric8.kubernetes.client.extension.SupportTestingClient;
 import io.fabric8.tekton.client.dsl.V1alpha1APIGroupDSL;
 import io.fabric8.tekton.client.dsl.V1beta1APIGroupDSL;
 
-public class DefaultTektonClient extends BaseClient implements NamespacedTektonClient {
+public class DefaultTektonClient extends ExtensionRootClientAdapter<DefaultTektonClient>
+    implements NamespacedTektonClient, SupportTestingClient {
 
   public DefaultTektonClient() {
     super();
@@ -35,22 +36,13 @@ public class DefaultTektonClient extends BaseClient implements NamespacedTektonC
     super(configuration);
   }
 
-  public DefaultTektonClient(ClientContext clientContext) {
-    super(clientContext);
+  public DefaultTektonClient(Client client) {
+    super(client);
   }
 
   @Override
-  public NamespacedTektonClient inAnyNamespace() {
-    return inNamespace(null);
-  }
-
-  @Override
-  public NamespacedTektonClient inNamespace(String namespace) {
-    Config updated = new ConfigBuilder(getConfiguration())
-      .withNamespace(namespace)
-      .build();
-
-    return new DefaultTektonClient(newState(updated));
+  protected DefaultTektonClient newInstance(Client client) {
+    return new DefaultTektonClient(client);
   }
 
   @Override
@@ -66,6 +58,11 @@ public class DefaultTektonClient extends BaseClient implements NamespacedTektonC
   @Override
   public V1alpha1APIGroupDSL v1alpha1() {
     return adapt(V1alpha1APIGroupClient.class);
+  }
+
+  @Override
+  public boolean isSupported() {
+    return hasApiGroup("tekton.dev", true);
   }
 
 }

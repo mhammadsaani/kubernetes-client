@@ -15,13 +15,24 @@
  */
 package io.fabric8.kubernetes.client.dsl;
 
-/**
- * @param <X>   The exec input.
- * @param <O>   Where to write err to.
- * @param <P>   Where to read err from.
- * @param <T>   The exec output.
- */
-public interface TtyExecOutputErrorable<X, O, P, T> extends
-        TtyExecErrorable<X, O, P, T>,
-        Outputable<O, P, TtyExecErrorable<X, O, P, T>> {
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.PipedOutputStream;
+
+public interface TtyExecOutputErrorable extends
+    TtyExecErrorable {
+
+  /**
+   * Should only be called with a minimally blocking or non-blocking stream
+   * <p>
+   * In particular do no use a {@link PipedOutputStream} - use {@link #redirectingOutput()} instead
+   */
+  TtyExecErrorable writingOutput(OutputStream in);
+
+  /**
+   * Will provide an {@link InputStream} via {@link ExecWatch#getOutput()}
+   * <p>
+   * WARNING: the resulting stream must be fully read or closed for other events to be processed properly
+   */
+  TtyExecErrorable redirectingOutput();
 }

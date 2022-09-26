@@ -15,20 +15,29 @@
  */
 package io.fabric8.kubernetes.client.dsl;
 
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.io.PipedInputStream;
-import java.io.PipedOutputStream;
-import java.nio.channels.ReadableByteChannel;
-import java.nio.channels.WritableByteChannel;
+import io.fabric8.kubernetes.api.model.Pod;
+import io.fabric8.kubernetes.api.model.policy.v1.Eviction;
 
-import io.fabric8.kubernetes.client.LocalPortForward;
-import io.fabric8.kubernetes.client.PortForward;
+public interface PodResource extends Resource<Pod>,
+    Loggable,
+    Containerable<String, ContainerResource>,
+    ContainerResource,
+    PortForwardable {
 
-public interface PodResource<T> extends Resource<T>,
-        Loggable<LogWatch>,
-        Containerable<String, ContainerResource<LogWatch, InputStream, PipedOutputStream, OutputStream, PipedInputStream, String, ExecWatch, Boolean, InputStream, Boolean>>,
-        ContainerResource<LogWatch, InputStream, PipedOutputStream, OutputStream, PipedInputStream, String, ExecWatch, Boolean, InputStream, Boolean>,
-        PortForwardable<PortForward, LocalPortForward, ReadableByteChannel, WritableByteChannel>,
-        Evictable<Boolean>{
+  /**
+   * Evicts resource, respecting {@link io.fabric8.kubernetes.api.model.policy.v1beta1.PodDisruptionBudget}
+   *
+   * @return value indicating object was evicted or not
+   * @throws io.fabric8.kubernetes.client.KubernetesClientException if an error occurs, including if the Pod is not found.
+   */
+  boolean evict();
+
+  /**
+   * Evicts a pod from its node subject to certain policies and safety constraints.
+   *
+   * @param eviction Eviction object
+   * @return value indicating object was evicted or not
+   * @throws io.fabric8.kubernetes.client.KubernetesClientException if an error occurs, including if the Pod is not found.
+   */
+  boolean evict(Eviction eviction);
 }

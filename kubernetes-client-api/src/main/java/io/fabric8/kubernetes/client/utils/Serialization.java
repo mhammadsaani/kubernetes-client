@@ -17,6 +17,7 @@ package io.fabric8.kubernetes.client.utils;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.fasterxml.jackson.dataformat.yaml.YAMLGenerator;
@@ -24,6 +25,14 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.fabric8.kubernetes.api.model.GenericKubernetesResource;
 import io.fabric8.kubernetes.api.model.KubernetesResource;
 import io.fabric8.kubernetes.client.KubernetesClientException;
+import io.fabric8.kubernetes.model.jackson.UnmatchedFieldTypeModule;
+import org.yaml.snakeyaml.DumperOptions;
+import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.constructor.SafeConstructor;
+import org.yaml.snakeyaml.nodes.Tag;
+import org.yaml.snakeyaml.representer.Representer;
+import org.yaml.snakeyaml.resolver.Resolver;
+
 import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -39,18 +48,16 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-import io.fabric8.kubernetes.client.utils.serialization.UnmatchedFieldTypeModule;
-import org.yaml.snakeyaml.Yaml;
-import org.yaml.snakeyaml.constructor.SafeConstructor;
-
 public class Serialization {
-  private Serialization() { }
+  private Serialization() {
+  }
 
   public static final UnmatchedFieldTypeModule UNMATCHED_FIELD_TYPE_MODULE = new UnmatchedFieldTypeModule();
 
   private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
   static {
     JSON_MAPPER.registerModules(new JavaTimeModule(), UNMATCHED_FIELD_TYPE_MODULE);
+    JSON_MAPPER.disable(DeserializationFeature.FAIL_ON_INVALID_SUBTYPE);
   }
 
   private static volatile ObjectMapper YAML_MAPPER;
@@ -60,11 +67,13 @@ public class Serialization {
   /**
    * {@link ObjectMapper} singleton instance used internally by the Kubernetes client.
    *
-   * <p> The ObjectMapper has an {@link UnmatchedFieldTypeModule} module registered. This module allows the client
+   * <p>
+   * The ObjectMapper has an {@link UnmatchedFieldTypeModule} module registered. This module allows the client
    * to work with Resources that contain properties that don't match the target field type. This is especially useful
    * and necessary to work with OpenShift Templates.
    *
-   * <p> n.b. the use of this module gives precedence to properties present in the additionalProperties Map present
+   * <p>
+   * n.b. the use of this module gives precedence to properties present in the additionalProperties Map present
    * in most KubernetesResource instances. If a property is both defined in the Map and in the original field, the
    * one from the additionalProperties Map will be serialized.
    */
@@ -75,11 +84,13 @@ public class Serialization {
   /**
    * {@link ObjectMapper} singleton instance used internally by the Kubernetes client.
    *
-   * <p> The ObjectMapper has an {@link UnmatchedFieldTypeModule} module registered. This module allows the client
+   * <p>
+   * The ObjectMapper has an {@link UnmatchedFieldTypeModule} module registered. This module allows the client
    * to work with Resources that contain properties that don't match the target field type. This is especially useful
    * and necessary to work with OpenShift Templates.
    *
-   * <p> n.b. the use of this module gives precedence to properties present in the additionalProperties Map present
+   * <p>
+   * n.b. the use of this module gives precedence to properties present in the additionalProperties Map present
    * in most KubernetesResource instances. If a property is both defined in the Map and in the original field, the
    * one from the additionalProperties Map will be serialized.
    */
@@ -88,8 +99,7 @@ public class Serialization {
       synchronized (Serialization.class) {
         if (YAML_MAPPER == null) {
           YAML_MAPPER = new ObjectMapper(
-            new YAMLFactory().disable(YAMLGenerator.Feature.USE_NATIVE_TYPE_ID)
-          );
+              new YAMLFactory().disable(YAMLGenerator.Feature.USE_NATIVE_TYPE_ID));
           YAML_MAPPER.registerModules(UNMATCHED_FIELD_TYPE_MODULE);
         }
       }
@@ -110,7 +120,8 @@ public class Serialization {
   /**
    * Returns a JSON representation of the given object.
    *
-   * <p> If the provided object contains a JsonAnyGetter annotated method with a Map that contains an entry that
+   * <p>
+   * If the provided object contains a JsonAnyGetter annotated method with a Map that contains an entry that
    * overrides a field of the provided object, the Map entry will take precedence upon serialization. Properties won't
    * be duplicated.
    *
@@ -129,7 +140,8 @@ public class Serialization {
   /**
    * Returns a YAML representation of the given object.
    *
-   * <p> If the provided object contains a JsonAnyGetter annotated method with a Map that contains an entry that
+   * <p>
+   * If the provided object contains a JsonAnyGetter annotated method with a Map that contains an entry that
    * overrides a field of the provided object, the Map entry will take precedence upon serialization. Properties won't
    * be duplicated.
    *
@@ -148,8 +160,8 @@ public class Serialization {
   /**
    * Unmarshals a stream.
    *
-   * @param is    The {@link InputStream}.
-   * @param <T>   The target type.
+   * @param is The {@link InputStream}.
+   * @param <T> The target type.
    *
    * @return returns de-serialized object
    */
@@ -159,9 +171,10 @@ public class Serialization {
 
   /**
    * Unmarshals a stream optionally performing placeholder substitution to the stream.
-   * @param is    The {@link InputStream}.
-   * @param parameters  A {@link Map} with parameters for placeholder substitution.
-   * @param <T>   The target type.
+   *
+   * @param is The {@link InputStream}.
+   * @param parameters A {@link Map} with parameters for placeholder substitution.
+   * @param <T> The target type.
    * @return returns returns de-serialized object
    */
   @SuppressWarnings("unchecked")
@@ -170,36 +183,47 @@ public class Serialization {
     if (containsMultipleDocuments(specFile)) {
       return (T) getKubernetesResourceList(parameters, specFile);
     } else if (specFile.contains(DOCUMENT_DELIMITER)) {
-      specFile = specFile.replaceAll("^---([ \\t].*?)?\\r?\\n","");
-      specFile = specFile.replaceAll("\\n---([ \\t].*?)?\\r?\\n?$","\n");
+      specFile = specFile.replaceAll("^---([ \\t].*?)?\\r?\\n", "");
+      specFile = specFile.replaceAll("\\n---([ \\t].*?)?\\r?\\n?$", "\n");
     }
     return unmarshal(new ByteArrayInputStream(specFile.getBytes()), JSON_MAPPER, parameters);
   }
 
   /**
    * Unmarshals a stream.
-   * @param is      The {@link InputStream}.
-   * @param mapper  The {@link ObjectMapper} to use.
-   * @param <T>     The target type.
+   *
+   * @param is The {@link InputStream}.
+   * @param mapper The {@link ObjectMapper} to use.
+   * @param <T> The target type.
    * @return returns de-serialized object
    */
   public static <T> T unmarshal(InputStream is, ObjectMapper mapper) {
-   return unmarshal(is, mapper, Collections.emptyMap());
+    return unmarshal(is, mapper, Collections.emptyMap());
   }
 
   /**
    * Unmarshals a stream optionally performing placeholder substitution to the stream.
-   * @param is          The {@link InputStream}.
-   * @param mapper      The {@link ObjectMapper} to use.
-   * @param parameters  A {@link Map} with parameters for placeholder substitution.
-   * @param <T>         The target type.
+   *
+   * @param is The {@link InputStream}.
+   * @param mapper The {@link ObjectMapper} to use.
+   * @param parameters A {@link Map} with parameters for placeholder substitution.
+   * @param <T> The target type.
    * @return returns de-serialized object
    */
   public static <T> T unmarshal(InputStream is, ObjectMapper mapper, Map<String, String> parameters) {
+    return unmarshal(is, mapper, new TypeReference<T>() {
+      @Override
+      public Type getType() {
+        return KubernetesResource.class;
+      }
+    }, parameters);
+  }
+
+  private static <T> T unmarshal(InputStream is, ObjectMapper mapper, TypeReference<T> type, Map<String, String> parameters) {
     try (
-      InputStream wrapped = parameters != null && !parameters.isEmpty() ? ReplaceValueStream.replaceValues(is, parameters) : is;
-      BufferedInputStream bis = new BufferedInputStream(wrapped)
-    ) {
+        InputStream wrapped = parameters != null && !parameters.isEmpty() ? ReplaceValueStream.replaceValues(is, parameters)
+            : is;
+        BufferedInputStream bis = new BufferedInputStream(wrapped)) {
       bis.mark(-1);
       int intch;
       do {
@@ -207,10 +231,25 @@ public class Serialization {
       } while (intch > -1 && Character.isWhitespace(intch));
       bis.reset();
 
+      final T result;
       if (intch != '{') {
-        return unmarshalYaml(bis, null);
+        final Yaml yaml = new Yaml(new SafeConstructor(), new Representer(), new DumperOptions(),
+            new CustomYamlTagResolverWithLimit());
+        final Map<String, Object> obj = yaml.load(bis);
+        result = mapper.convertValue(obj, type);
+      } else {
+        result = mapper.readerFor(type).readValue(bis);
       }
-      return mapper.readerFor(KubernetesResource.class).readValue(bis);
+      // because the deserializer will always return a generic, we need to check the validity
+      if (result instanceof GenericKubernetesResource
+          && type.getType().getTypeName().equals(KubernetesResource.class.getName())) {
+        GenericKubernetesResource gkr = (GenericKubernetesResource) result;
+        if (Utils.isNullOrEmpty(gkr.getKind()) || Utils.isNullOrEmpty(gkr.getApiVersion())) {
+          throw new KubernetesClientException(
+              "Could not parse the input as a KubernetesResource as it lacks kind or apiVersion fields.");
+        }
+      }
+      return result;
     } catch (IOException e) {
       throw KubernetesClientException.launderThrowable(e);
     }
@@ -218,11 +257,12 @@ public class Serialization {
 
   /**
    * Unmarshals a {@link String}
-   * @param str   The {@link String}.
-   * @param <T>   template argument denoting type
+   *
+   * @param str The {@link String}.
+   * @param <T> template argument denoting type
    * @return returns de-serialized object
    */
-  public static<T> T unmarshal(String str) {
+  public static <T> T unmarshal(String str) {
     try (InputStream is = new ByteArrayInputStream(str.getBytes(StandardCharsets.UTF_8))) {
       return unmarshal(is);
     } catch (IOException e) {
@@ -232,21 +272,23 @@ public class Serialization {
 
   /**
    * Unmarshals a {@link String}
-   * @param str   The {@link String}.
-   * @param type  The target type.
-   * @param <T>   template argument denoting type
+   *
+   * @param str The {@link String}.
+   * @param type The target type.
+   * @param <T> template argument denoting type
    * @return returns de-serialized object
    */
-  public static<T> T unmarshal(String str, final Class<T> type) {
+  public static <T> T unmarshal(String str, final Class<T> type) {
     return unmarshal(str, type, Collections.emptyMap());
   }
 
   /**
    * Unmarshals a {@link String} optionally performing placeholder substitution to the String.
-   * @param str         The {@link String}.
-   * @param type        The target type.
-   * @param <T>         Template argument denoting type
-   * @param parameters  A hashmap containing parameters
+   *
+   * @param str The {@link String}.
+   * @param type The target type.
+   * @param <T> Template argument denoting type
+   * @param parameters A hashmap containing parameters
    *
    * @return returns de-serialized object
    */
@@ -265,9 +307,10 @@ public class Serialization {
 
   /**
    * Unmarshals an {@link InputStream}.
-   * @param is              The {@link InputStream}.
-   * @param type            The type.
-   * @param <T>           Template argument denoting type
+   *
+   * @param is The {@link InputStream}.
+   * @param type The type.
+   * @param <T> Template argument denoting type
    * @return returns de-serialized object
    */
   public static <T> T unmarshal(InputStream is, final Class<T> type) {
@@ -276,10 +319,11 @@ public class Serialization {
 
   /**
    * Unmarshals an {@link InputStream} optionally performing placeholder substitution to the stream.
-   * @param is              The {@link InputStream}.
-   * @param type            The type.
-   * @param parameters      A {@link Map} with parameters for placeholder substitution.
-   * @param <T>             Template argument denoting type
+   *
+   * @param is The {@link InputStream}.
+   * @param type The type.
+   * @param parameters A {@link Map} with parameters for placeholder substitution.
+   * @param <T> Template argument denoting type
    * @return returns de-serialized object
    */
   public static <T> T unmarshal(InputStream is, final Class<T> type, Map<String, String> parameters) {
@@ -291,60 +335,42 @@ public class Serialization {
     }, parameters);
   }
 
-
   /**
    * Unmarshals an {@link InputStream}.
-   * @param is            The {@link InputStream}.
-   * @param type          The {@link TypeReference}.
-   * @param <T>           Template argument denoting type
+   *
+   * @param is The {@link InputStream}.
+   * @param type The {@link TypeReference}.
+   * @param <T> Template argument denoting type
    * @return returns de-serialized object
    */
   public static <T> T unmarshal(InputStream is, TypeReference<T> type) {
-   return unmarshal(is, type, Collections.emptyMap());
+    return unmarshal(is, type, Collections.emptyMap());
   }
 
   /**
    * Unmarshals an {@link InputStream} optionally performing placeholder substitution to the stream.
    *
-   * @param is            The {@link InputStream}.
-   * @param type          The {@link TypeReference}.
-   * @param parameters    A {@link Map} with parameters for placeholder substitution.
-   * @param <T>           Template argument denoting type
+   * @param is The {@link InputStream}.
+   * @param type The {@link TypeReference}.
+   * @param parameters A {@link Map} with parameters for placeholder substitution.
+   * @param <T> Template argument denoting type
    *
    * @return returns de-serialized object
    */
   public static <T> T unmarshal(InputStream is, TypeReference<T> type, Map<String, String> parameters) {
-    try (
-      InputStream wrapped = parameters != null && !parameters.isEmpty() ? ReplaceValueStream.replaceValues(is, parameters) : is;
-      BufferedInputStream bis = new BufferedInputStream(wrapped)
-    ) {
-      bis.mark(-1);
-      int intch;
-      do {
-        intch = bis.read();
-      } while (intch > -1 && Character.isWhitespace(intch));
-      bis.reset();
-
-      ObjectMapper mapper = JSON_MAPPER;
-      if (intch != '{') {
-        return unmarshalYaml(bis, type);
-      }
-      return mapper.readValue(bis, type);
-    } catch (IOException e) {
-      throw KubernetesClientException.launderThrowable(e);
-    }
+    return unmarshal(is, JSON_MAPPER, type, parameters);
   }
 
   private static List<KubernetesResource> getKubernetesResourceList(Map<String, String> parameters, String specFile) {
     return splitSpecFile(specFile).stream().filter(Serialization::validate)
-      .map(document ->
-        (KubernetesResource)Serialization.unmarshal(new ByteArrayInputStream(document.getBytes()), parameters))
-      .collect(Collectors.toList());
+        .map(
+            document -> (KubernetesResource) Serialization.unmarshal(new ByteArrayInputStream(document.getBytes()), parameters))
+        .collect(Collectors.toList());
   }
 
   static boolean containsMultipleDocuments(String specFile) {
     final long validDocumentCount = splitSpecFile(specFile).stream().filter(Serialization::validate)
-      .count();
+        .count();
     return validDocumentCount > 1;
   }
 
@@ -384,22 +410,9 @@ public class Serialization {
     }
   }
 
-  private static <T> T unmarshalYaml(InputStream is, TypeReference<T> type) throws JsonProcessingException {
-    final Yaml yaml = new Yaml(new SafeConstructor());
-    Map<String, Object> obj = yaml.load(is);
-    String objAsJsonStr = JSON_MAPPER.writeValueAsString(obj);
-    return unmarshalJsonStr(objAsJsonStr, type);
-  }
-
-  private static <T> T unmarshalJsonStr(String jsonString, TypeReference<T> type) throws JsonProcessingException {
-    if (type != null) {
-      return JSON_MAPPER.readValue(jsonString, type);
-    }
-    return JSON_MAPPER.readerFor(KubernetesResource.class).readValue(jsonString);
-  }
-
   /**
    * Create a copy of the resource via serialization.
+   *
    * @return a deep clone of the resource
    * @throws IllegalArgumentException if the cloning cannot be performed
    */
@@ -407,16 +420,23 @@ public class Serialization {
     // if full serialization seems too expensive, there is also
     //return (T) JSON_MAPPER.convertValue(resource, resource.getClass());
     try {
-      return JSON_MAPPER.readValue(
-        JSON_MAPPER.writeValueAsString(resource), new TypeReference<T>() {
-          @Override
-          public Type getType() {
-            // Force KubernetesResource so that the KubernetesDeserializer takes over any resource configured deserializer
-            return resource instanceof GenericKubernetesResource ? resource.getClass() : KubernetesResource.class;
-          }
-        });
+      return (T) JSON_MAPPER.readValue(
+          JSON_MAPPER.writeValueAsString(resource), resource.getClass());
     } catch (JsonProcessingException e) {
       throw new IllegalStateException(e);
+    }
+  }
+
+  private static class CustomYamlTagResolverWithLimit extends Resolver {
+    @Override
+    public void addImplicitResolver(Tag tag, Pattern regexp, String first, int limit) {
+      if (tag == Tag.TIMESTAMP)
+        return;
+      if (tag.equals(Tag.BOOL)) {
+        regexp = Pattern.compile("^(?:true|True|TRUE|false|False|FALSE)$");
+        first = "tTfF";
+      }
+      super.addImplicitResolver(tag, regexp, first, limit);
     }
   }
 }

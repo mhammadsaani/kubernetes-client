@@ -16,12 +16,23 @@
 
 package io.fabric8.kubernetes.client.dsl;
 
-/**
- * @param <X>   The exec input
- * @param <T>   The exec output
- */
-public interface Execable<X, T> {
+public interface Execable {
 
-    T exec(X... input);
+  /**
+   * Execute a command in a container
+   * 
+   * @param input the command to run
+   * @return container with stdin, stdout, stderr streams
+   *         (if redirectingInput(), redirectingOutput(), redirectingError() were called respectively)
+   */
+  ExecWatch exec(String... input);
+
+  /**
+   * Attach to the main process of a container
+   * 
+   * @return container with stdin, stdout, stderr streams
+   *         (if redirectingInput(), redirectingOutput(), redirectingError() were called respectively)
+   */
+  ExecWatch attach();
 
 }

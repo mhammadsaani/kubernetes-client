@@ -128,7 +128,7 @@ func (g *schemaGenerator) generateReference(t reflect.Type) string {
 func (g *schemaGenerator) javaTypeArrayList(t reflect.Type) string {
 	typeName := g.javaTypeWrapPrimitive(t)
 	switch typeName {
-	case "Byte", "Integer":
+	case "Byte":
 		return "String"
 	default:
 		return "java.util.ArrayList<" + typeName + ">"
@@ -193,9 +193,11 @@ func (g *schemaGenerator) javaType(t reflect.Type) string {
 	switch t.Kind() {
 	case reflect.Bool:
 		return "bool"
+	case reflect.Uint8:
+	  return "Byte"
 	case reflect.Int, reflect.Int8, reflect.Int16,
 		reflect.Int32, reflect.Uint,
-		reflect.Uint8, reflect.Uint16, reflect.Uint32:
+		reflect.Uint16, reflect.Uint32:
 		return "int"
 	case reflect.Int64, reflect.Uint64:
 		return "Long"
@@ -647,6 +649,8 @@ func (g *schemaGenerator) isClusterScopedResource(t reflect.Type) bool {
 		"k8s.io/api/storage/v1beta1/StorageClass",
 		"k8s.io/api/flowcontrol/v1beta1/FlowSchema",
 		"k8s.io/api/flowcontrol/v1beta1/PriorityLevelConfiguration",
+		"k8s.io/api/flowcontrol/v1beta2/FlowSchema",
+		"k8s.io/api/flowcontrol/v1beta2/PriorityLevelConfiguration",
 		"github.com/openshift/api/authorization/v1/ClusterRole",
 		"github.com/openshift/api/authorization/v1/ClusterRoleBinding",
 		"github.com/openshift/api/authorization/v1/ResourceAccessReview",
@@ -654,10 +658,13 @@ func (g *schemaGenerator) isClusterScopedResource(t reflect.Type) bool {
 		"github.com/openshift/api/oauth/v1/UserOAuthAccessToken",
 		"github.com/openshift/api/oauth/v1/OAuthClientAuthorization",
 		"github.com/openshift/api/config/v1/Authentication",
+		"github.com/openshift/api/config/v1/Build",
 		"github.com/openshift/api/config/v1/Console",
 		"github.com/openshift/api/config/v1/DNS",
 		"github.com/openshift/api/config/v1/Network",
 		"github.com/openshift/api/config/v1/Infrastructure",
+		"github.com/openshift/api/config/v1/Image",
+		"github.com/openshift/api/config/v1/ImageContentPolicy",
 		"github.com/openshift/api/config/v1/FeatureGate",
 		"github.com/openshift/api/config/v1/OperatorHub",
 		"github.com/openshift/api/config/v1/APIServer",
@@ -669,6 +676,7 @@ func (g *schemaGenerator) isClusterScopedResource(t reflect.Type) bool {
 		"github.com/openshift/api/config/v1/ClusterOperator",
 		"github.com/openshift/api/network/v1/NetNamespace",
 		"github.com/openshift/api/config/v1/Proxy",
+		"github.com/openshift/api/config/v1/Project",
 		"github.com/openshift/api/security/v1/RangeAllocation",
 		"github.com/openshift/api/image/v1/Image",
 		"github.com/openshift/api/image/v1/ImageSignature",
@@ -709,6 +717,14 @@ func (g *schemaGenerator) isClusterScopedResource(t reflect.Type) bool {
 		"github.com/openshift/api/user/v1/UserIdentityMapping",
 		"github.com/openshift/api/user/v1/Identity",
 		"github.com/openshift/api/apiserver/v1/APIRequestCount",
+		"github.com/openshift/api/project/v1/Project",
+		"github.com/openshift/api/project/v1/ProjectRequest",
+		"github.com/openshift/api/user/v1/Group",
+		"github.com/openshift/api/user/v1/User",
+		"github.com/openshift/api/oauth/v1/OAuthAccessToken",
+		"github.com/openshift/api/oauth/v1/OAuthAuthorizeToken",
+		"github.com/openshift/api/oauth/v1/OAuthClient",
+		"github.com/openshift/api/security/v1/SecurityContextConstraints",
 		"github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1/ContainerRuntimeConfig",
 		"github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1/ControllerConfig",
 		"github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1/KubeletConfig",

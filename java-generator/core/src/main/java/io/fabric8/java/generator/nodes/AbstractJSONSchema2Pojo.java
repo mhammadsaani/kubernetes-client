@@ -15,139 +15,255 @@
  */
 package io.fabric8.java.generator.nodes;
 
-import static io.fabric8.java.generator.nodes.Keywords.JAVA_KEYWORDS;
-
-import com.github.javaparser.ast.CompilationUnit;
+import com.fasterxml.jackson.databind.JsonNode;
+import io.fabric8.java.generator.Config;
 import io.fabric8.java.generator.exceptions.JavaGeneratorException;
 import io.fabric8.kubernetes.api.model.apiextensions.v1.JSONSchemaProps;
+
+import java.util.Locale;
+import java.util.Optional;
 import java.util.function.Function;
+
+import static io.fabric8.java.generator.nodes.Keywords.JAVA_KEYWORDS;
 
 public abstract class AbstractJSONSchema2Pojo {
 
-    static final String BOOLEAN_CRD_TYPE = "boolean";
-    static final String INTEGER_CRD_TYPE = "integer";
-    static final String INT32_CRD_TYPE = "int32";
-    static final String INT64_CRD_TYPE = "int64";
-    static final String NUMBER_CRD_TYPE = "number";
-    static final String FLOAT_CRD_TYPE = "float";
-    static final String DOUBLE_CRD_TYPE = "double";
-    static final String STRING_CRD_TYPE = "string";
-    static final String OBJECT_CRD_TYPE = "object";
-    static final String ARRAY_CRD_TYPE = "array";
+  static final String BOOLEAN_CRD_TYPE = "boolean";
+  static final String INTEGER_CRD_TYPE = "integer";
+  static final String INT32_CRD_TYPE = "int32";
+  static final String INT64_CRD_TYPE = "int64";
+  static final String NUMBER_CRD_TYPE = "number";
+  static final String FLOAT_CRD_TYPE = "float";
+  static final String DOUBLE_CRD_TYPE = "double";
+  static final String STRING_CRD_TYPE = "string";
+  static final String OBJECT_CRD_TYPE = "object";
+  static final String ARRAY_CRD_TYPE = "array";
 
-    public abstract String getType();
+  protected final String description;
+  protected final Config config;
+  protected final boolean isNullable;
+  protected final JsonNode defaultValue;
 
-    public abstract GeneratorResult generateJava(CompilationUnit cu);
+  protected Double maximum;
+  protected Double minimum;
+  protected String pattern;
 
-    /** Takes a random string and manipulate it to be a valid Java identifier */
-    public static String sanitizeString(String str) {
-        str = str.trim();
-        String sanitized = "";
-        if (JAVA_KEYWORDS.contains(str)) {
-            sanitized = "_" + str;
-        } else {
-            sanitized = str;
-        }
+  public Double getMaximum() {
+    return maximum;
+  }
 
-        if (sanitized.startsWith("-")) {
-            sanitized = sanitized.replaceFirst("-", "minus");
-        }
+  public Double getMinimum() {
+    return minimum;
+  }
 
-        int index = sanitized.indexOf('-');
-        while (index != -1) {
-            int next = Math.min(index + 2, sanitized.length());
-            sanitized =
-                    sanitized.substring(0, index)
-                            + sanitized.substring(index + 1, next).toUpperCase()
-                            + sanitized.substring(next);
-            index = sanitized.indexOf('-');
-        }
+  public String getPattern() {
+    return pattern;
+  }
 
-        return sanitized;
+  public abstract String getType();
+
+  public abstract GeneratorResult generateJava();
+
+  /** Takes a string and return the corresponding package name */
+  public static String packageName(String str) {
+    return str.toLowerCase(Locale.ROOT);
+  }
+
+  public String getDescription() {
+    return description;
+  }
+
+  protected JsonNode getDefaultValue() {
+    return defaultValue;
+  }
+
+  protected String getClassType() {
+    return getType();
+  }
+
+  protected AbstractJSONSchema2Pojo(Config config, String description, final boolean isNullable, JsonNode defaultValue,
+      final ValidationProperties validationProperties) {
+    this.config = config;
+    this.description = description;
+    this.isNullable = isNullable;
+    this.defaultValue = defaultValue;
+    if (validationProperties != null) {
+      this.maximum = validationProperties.getMaximum();
+      this.minimum = validationProperties.getMinimum();
+      this.pattern = validationProperties.getPattern();
+    }
+  }
+
+  /** Takes a random string and manipulate it to be a valid Java identifier */
+  public static String sanitizeString(String str) {
+    str = str.trim();
+    String sanitized = "";
+    if (JAVA_KEYWORDS.contains(str)) {
+      sanitized = "_" + str;
+    } else {
+      sanitized = str;
     }
 
-    public static AbstractJSONSchema2Pojo fromJsonSchema(
-            String key, JSONSchemaProps prop, String prefix, String suffix) {
-        Function<JavaNameAndType, AbstractJSONSchema2Pojo> fromJsonSchema =
-                javaNameAndType -> fromJsonSchema(key, javaNameAndType, prop, prefix, suffix);
-        String type = prop.getType();
-        if (Boolean.TRUE.equals(prop.getXKubernetesIntOrString())) {
-            return fromJsonSchema.apply(JPrimitiveNameAndType.INT_OR_STRING);
-        } else if (type == null
-                && Boolean.TRUE.equals(prop.getXKubernetesPreserveUnknownFields())) {
-            return fromJsonSchema.apply(new JObjectNameAndType(key));
-        } else if (prop.getEnum() != null && prop.getEnum().size() > 0) {
-            return fromJsonSchema.apply(new JEnumNameAndType(key));
-        } else {
-            if (type == null) {
-                throw new IllegalArgumentException("Type for key:" + key + " is null");
-            }
-
-            switch (type) {
-                case BOOLEAN_CRD_TYPE:
-                    return fromJsonSchema.apply(JPrimitiveNameAndType.BOOL);
-                case INTEGER_CRD_TYPE:
-                    String intFormat = prop.getFormat();
-                    if (intFormat == null) intFormat = INT64_CRD_TYPE;
-
-                    switch (intFormat) {
-                        case INT32_CRD_TYPE:
-                            return fromJsonSchema.apply(JPrimitiveNameAndType.INTEGER);
-                        case INT64_CRD_TYPE:
-                        default:
-                            return fromJsonSchema.apply(JPrimitiveNameAndType.LONG);
-                    }
-                case NUMBER_CRD_TYPE:
-                    String numberFormat = prop.getFormat();
-                    if (numberFormat == null) numberFormat = DOUBLE_CRD_TYPE;
-
-                    switch (numberFormat) {
-                        case FLOAT_CRD_TYPE:
-                            return fromJsonSchema.apply(JPrimitiveNameAndType.FLOAT);
-                        case DOUBLE_CRD_TYPE:
-                        default:
-                            return fromJsonSchema.apply(JPrimitiveNameAndType.DOUBLE);
-                    }
-                case STRING_CRD_TYPE:
-                    return fromJsonSchema.apply(JPrimitiveNameAndType.STRING);
-                case OBJECT_CRD_TYPE:
-                    if (prop.getAdditionalProperties() != null
-                            && prop.getAdditionalProperties().getSchema() != null) {
-                        return fromJsonSchema.apply(new JMapNameAndType(key));
-                    } else {
-                        return fromJsonSchema.apply(new JObjectNameAndType(key));
-                    }
-                case ARRAY_CRD_TYPE:
-                    return fromJsonSchema.apply(new JArrayNameAndType(key));
-                default:
-                    throw new JavaGeneratorException("Unmanaged type " + prop.getType());
-            }
-        }
+    if (sanitized.startsWith("-")) {
+      sanitized = sanitized.replaceFirst("-", "minus");
     }
 
-    private static AbstractJSONSchema2Pojo fromJsonSchema(
-            String key, JavaNameAndType nt, JSONSchemaProps prop, String prefix, String suffix) {
-        switch (nt.getType()) {
-            case PRIMITIVE:
-                return new JPrimitive(nt.getName());
-            case ARRAY:
-                return new JArray(fromJsonSchema(key, prop.getItems().getSchema(), prefix, suffix));
-            case MAP:
-                return new JMap(
-                        fromJsonSchema(
-                                key, prop.getAdditionalProperties().getSchema(), prefix, suffix));
-            case OBJECT:
-                boolean preserveUnknownFields =
-                        Boolean.TRUE.equals(prop.getXKubernetesPreserveUnknownFields());
-                return new JObject(
-                        key,
-                        prop.getProperties(),
-                        prop.getRequired(),
-                        new JObjectOptions(preserveUnknownFields, prefix, suffix));
-            case ENUM:
-                return new JEnum(key, prop.getEnum());
+    int index = sanitized.indexOf('-');
+    while (index != -1) {
+      int next = Math.min(index + 2, sanitized.length());
+      sanitized = sanitized.substring(0, index)
+          + sanitized.substring(index + 1, next).toUpperCase()
+          + sanitized.substring(next);
+      index = sanitized.indexOf('-');
+    }
+
+    return sanitized;
+  }
+
+  public static AbstractJSONSchema2Pojo fromJsonSchema(
+      String key,
+      JSONSchemaProps prop,
+      String parentPkg,
+      String classPrefix,
+      String classSuffix,
+      Config config) {
+    Function<JavaNameAndType, AbstractJSONSchema2Pojo> fromJsonSchema = javaNameAndType -> fromJsonSchema(
+        key,
+        javaNameAndType,
+        prop,
+        parentPkg,
+        classPrefix,
+        classSuffix,
+        config);
+    String type = prop.getType();
+    if (Boolean.TRUE.equals(prop.getXKubernetesIntOrString())) {
+      return fromJsonSchema.apply(JPrimitiveNameAndType.INT_OR_STRING);
+    } else if (type == null
+        && Boolean.TRUE.equals(prop.getXKubernetesPreserveUnknownFields())) {
+      return fromJsonSchema.apply(new JObjectNameAndType(key));
+    } else if (prop.getEnum() != null && prop.getEnum().size() > 0) {
+      return fromJsonSchema.apply(new JEnumNameAndType(key));
+    } else {
+      if (type == null) {
+        throw new IllegalArgumentException("Type for key:" + key + " is null");
+      }
+
+      switch (type) {
+        case BOOLEAN_CRD_TYPE:
+          return fromJsonSchema.apply(JPrimitiveNameAndType.BOOL);
+        case INTEGER_CRD_TYPE:
+          String intFormat = prop.getFormat();
+          if (intFormat == null)
+            intFormat = INT64_CRD_TYPE;
+
+          switch (intFormat) {
+            case INT32_CRD_TYPE:
+              return fromJsonSchema.apply(JPrimitiveNameAndType.INTEGER);
+            case INT64_CRD_TYPE:
             default:
-                throw new JavaGeneratorException("Unreachable " + nt.getType());
-        }
+              return fromJsonSchema.apply(JPrimitiveNameAndType.LONG);
+          }
+        case NUMBER_CRD_TYPE:
+          String numberFormat = prop.getFormat();
+          if (numberFormat == null)
+            numberFormat = DOUBLE_CRD_TYPE;
+
+          switch (numberFormat) {
+            case FLOAT_CRD_TYPE:
+              return fromJsonSchema.apply(JPrimitiveNameAndType.FLOAT);
+            case DOUBLE_CRD_TYPE:
+            default:
+              return fromJsonSchema.apply(JPrimitiveNameAndType.DOUBLE);
+          }
+        case STRING_CRD_TYPE:
+          return fromJsonSchema.apply(JPrimitiveNameAndType.STRING);
+        case OBJECT_CRD_TYPE:
+          if (prop.getAdditionalProperties() != null
+              && prop.getAdditionalProperties().getSchema() != null) {
+            return fromJsonSchema.apply(new JMapNameAndType(key));
+          } else {
+            return fromJsonSchema.apply(new JObjectNameAndType(key));
+          }
+        case ARRAY_CRD_TYPE:
+          return fromJsonSchema.apply(new JArrayNameAndType(key));
+        default:
+          throw new JavaGeneratorException("Unmanaged type " + prop.getType());
+      }
     }
+  }
+
+  private static AbstractJSONSchema2Pojo fromJsonSchema(
+      String key,
+      JavaNameAndType nt,
+      JSONSchemaProps prop,
+      String parentPkg,
+      String classPrefix,
+      String classSuffix,
+      Config config) {
+    final boolean isNullable = Boolean.TRUE.equals(prop.getNullable());
+    switch (nt.getType()) {
+      case PRIMITIVE:
+        return new JPrimitive(
+            nt.getName(),
+            config,
+            prop.getDescription(),
+            isNullable,
+            prop.getDefault(),
+            ValidationProperties.Builder.getInstance()
+                .withMaximum(prop.getMaximum())
+                .withMinimum(prop.getMinimum())
+                .withPattern(prop.getPattern())
+                .build());
+      case ARRAY:
+        return new JArray(
+            fromJsonSchema(
+                key,
+                prop.getItems().getSchema(),
+                parentPkg,
+                classPrefix,
+                classSuffix,
+                config),
+            config,
+            prop.getDescription(),
+            isNullable,
+            prop.getDefault());
+      case MAP:
+        return new JMap(
+            fromJsonSchema(
+                key,
+                prop.getAdditionalProperties().getSchema(),
+                parentPkg,
+                classPrefix,
+                classSuffix,
+                config),
+            config,
+            prop.getDescription(),
+            isNullable,
+            prop.getDefault());
+      case OBJECT:
+        final boolean preserveUnknownFields = Boolean.TRUE.equals(prop.getXKubernetesPreserveUnknownFields());
+        return new JObject(
+            parentPkg,
+            key,
+            prop.getProperties(),
+            prop.getRequired(),
+            preserveUnknownFields,
+            classPrefix,
+            classSuffix,
+            config,
+            prop.getDescription(),
+            isNullable,
+            prop.getDefault());
+      case ENUM:
+        return new JEnum(
+            key,
+            prop.getEnum(),
+            config,
+            prop.getDescription(),
+            isNullable,
+            prop.getDefault());
+      default:
+        throw new JavaGeneratorException("Unreachable " + nt.getType());
+    }
+  }
 }

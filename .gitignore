@@ -9,6 +9,7 @@ release.properties
 dependency-reduced-pom.xml
 buildNumber.properties
 .mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
 
 # Eclipse
 .project
@@ -82,3 +83,6 @@ crashlytics-build.properties
 # Ignore generator binary output file
 kubernetes-model-generator/*/generate
 extensions/*/generator/generate
+
+# Formatter and Impsort cache directory
+.cache

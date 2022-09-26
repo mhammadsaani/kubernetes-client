@@ -15,245 +15,772 @@
  */
 package io.fabric8.java.generator;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.TextNode;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.EnumDeclaration;
+import com.github.javaparser.ast.body.FieldDeclaration;
+import com.github.javaparser.ast.body.MethodDeclaration;
+import com.github.javaparser.ast.body.VariableDeclarator;
+import com.github.javaparser.ast.expr.AnnotationExpr;
+import com.github.javaparser.ast.expr.Expression;
+import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.SingleMemberAnnotationExpr;
+import com.github.javaparser.ast.stmt.BlockStmt;
 import io.fabric8.java.generator.nodes.*;
 import io.fabric8.kubernetes.api.model.apiextensions.v1.JSONSchemaProps;
-import java.util.*;
+import io.fabric8.kubernetes.client.utils.Serialization;
 import org.junit.jupiter.api.Test;
+
+import java.util.*;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GeneratorTest {
 
-    static final JObjectOptions dummyOptions = new JObjectOptions(false, "", "");
+  static final Config defaultConfig = new Config();
 
-    @Test
-    void testCorrectInterpolationOfPackage() {
-        // Arrange
-        CRGeneratorRunner runner = new CRGeneratorRunner();
+  @Test
+  void testCorrectInterpolationOfPackage() {
+    // Arrange
+    CRGeneratorRunner runner = new CRGeneratorRunner(defaultConfig);
 
-        // Act
-        String packageName = runner.getPackage("test.org");
+    // Act
+    String packageName = runner.getPackage("test.org");
 
-        // Assert
-        assertEquals("org.test", packageName);
-    }
+    // Assert
+    assertEquals("org.test", packageName);
+  }
 
-    @Test
-    void testCR() {
-        // Arrange
-        CompilationUnit cu = new CompilationUnit();
-        JCRObject cro = new JCRObject("t", "g", "v", true, true, true, true);
+  @Test
+  void testCR() {
+    // Arrange
+    JCRObject cro = new JCRObject(
+        "v1alpha1",
+        "t",
+        "g",
+        "v",
+        "Spec",
+        "Status",
+        true,
+        true,
+        true,
+        true,
+        defaultConfig);
 
-        // Act
-        GeneratorResult res = cro.generateJava(cu);
+    // Act
+    GeneratorResult res = cro.generateJava();
 
-        // Assert
-        assertEquals(1, res.getTopLevelClasses().size());
-        assertEquals("t", res.getTopLevelClasses().get(0));
-    }
+    // Assert
+    assertEquals(1, res.getTopLevelClasses().size());
+    assertEquals("t", res.getTopLevelClasses().get(0).getName());
+  }
 
-    @Test
-    void testPrimitive() {
-        // Arrange
-        JPrimitive primitive = new JPrimitive("test");
+  @Test
+  void testCRWithoutNamespace() {
+    // Arrange
+    JCRObject cro = new JCRObject(
+        null,
+        "t",
+        "g",
+        "v",
+        "Spec",
+        "Status",
+        true,
+        true,
+        true,
+        true,
+        defaultConfig);
 
-        // Act
-        GeneratorResult res = primitive.generateJava(new CompilationUnit());
+    // Act
+    GeneratorResult res = cro.generateJava();
 
-        // Assert
-        assertEquals("test", primitive.getType());
-        assertEquals(0, res.getTopLevelClasses().size());
-    }
+    // Assert
+    assertEquals(1, res.getTopLevelClasses().size());
+    assertEquals("t", res.getTopLevelClasses().get(0).getName());
+  }
 
-    @Test
-    void testArrayOfPrimitives() {
-        // Arrange
-        JArray array = new JArray(new JPrimitive("primitive"));
+  @Test
+  void testPrimitive() {
+    // Arrange
+    JPrimitive primitive = new JPrimitive(
+        "test",
+        defaultConfig,
+        null,
+        Boolean.FALSE,
+        null,
+        null);
 
-        // Act
-        GeneratorResult res = array.generateJava(new CompilationUnit());
+    // Act
+    GeneratorResult res = primitive.generateJava();
 
-        // Assert
-        assertEquals("java.util.List<primitive>", array.getType());
-        assertEquals(0, res.getTopLevelClasses().size());
-    }
+    // Assert
+    assertEquals("test", primitive.getType());
+    assertEquals(0, res.getTopLevelClasses().size());
+  }
 
-    @Test
-    void testMapOfPrimitives() {
-        // Arrange
-        JMap map = new JMap(new JPrimitive("primitive"));
+  @Test
+  void testPrimitiveWithNumericValidationConstraints() {
+    // Arrange
+    final Double expectedMaximum = 3.14;
+    final Double expectedMinimum = 0.0;
+    ValidationProperties validationProperties = ValidationProperties.Builder
+        .getInstance()
+        .withMaximum(expectedMaximum)
+        .withMinimum(expectedMinimum)
+        .build();
+    JPrimitive primitive = new JPrimitive(
+        "test",
+        defaultConfig,
+        null,
+        Boolean.FALSE,
+        null,
+        validationProperties);
 
-        // Act
-        GeneratorResult res = map.generateJava(new CompilationUnit());
+    // Act
+    GeneratorResult res = primitive.generateJava();
 
-        // Assert
-        assertEquals("java.util.Map<java.lang.String, primitive>", map.getType());
-        assertEquals(0, res.getTopLevelClasses().size());
-    }
+    // Assert
+    assertEquals("test", primitive.getType());
+    assertEquals(0, res.getTopLevelClasses().size());
+    assertEquals(expectedMaximum, primitive.getMaximum());
+    assertEquals(expectedMinimum, primitive.getMinimum());
+    assertNull(primitive.getPattern());
+  }
 
-    @Test
-    void testEmptyObject() {
-        // Arrange
-        JObject obj = new JObject("t", null, null, dummyOptions);
+  @Test
+  void testPrimitiveWithAlphanumericValidationConstraints() {
+    // Arrange
+    final String expectedPattern = ".*whatever.*";
+    ValidationProperties validationProperties = ValidationProperties.Builder
+        .getInstance()
+        .withPattern(expectedPattern)
+        .build();
+    JPrimitive primitive = new JPrimitive(
+        "test",
+        defaultConfig,
+        null,
+        Boolean.FALSE,
+        null,
+        validationProperties);
 
-        // Act
-        GeneratorResult res = obj.generateJava(new CompilationUnit());
+    // Act
+    GeneratorResult res = primitive.generateJava();
 
-        // Assert
-        assertEquals("T", obj.getType());
-        assertEquals(1, res.getTopLevelClasses().size());
-        assertEquals("T", res.getTopLevelClasses().get(0));
-    }
+    // Assert
+    assertEquals("test", primitive.getType());
+    assertEquals(0, res.getTopLevelClasses().size());
+    assertEquals(expectedPattern, primitive.getPattern());
+    assertNull(primitive.getMaximum());
+    assertNull(primitive.getMinimum());
+  }
 
-    @Test
-    void testObjectOfPrimitives() {
-        // Arrange
-        CompilationUnit cu = new CompilationUnit();
-        Map<String, JSONSchemaProps> props = new HashMap<>();
-        JSONSchemaProps newBool = new JSONSchemaProps();
-        newBool.setType("boolean");
-        props.put("o1", newBool);
-        JObject obj = new JObject("t", props, null, dummyOptions);
+  @Test
+  void testArrayOfPrimitives() {
+    // Arrange
+    JArray array = new JArray(
+        new JPrimitive(
+            "primitive",
+            defaultConfig,
+            null,
+            Boolean.FALSE,
+            null,
+            null),
+        defaultConfig,
+        null,
+        Boolean.FALSE,
+        null);
 
-        // Act
-        GeneratorResult res = obj.generateJava(cu);
+    // Act
+    GeneratorResult res = array.generateJava();
 
-        // Assert
-        assertEquals("T", obj.getType());
-        assertEquals(1, res.getTopLevelClasses().size());
-        assertEquals("T", res.getTopLevelClasses().get(0));
+    // Assert
+    assertEquals("java.util.List<primitive>", array.getType());
+    assertEquals(0, res.getTopLevelClasses().size());
+  }
 
-        Optional<ClassOrInterfaceDeclaration> clz = cu.getClassByName("T");
-        assertTrue(clz.isPresent());
-        assertEquals(1, clz.get().getFields().size());
-        assertTrue(clz.get().getFieldByName("o1").isPresent());
-    }
+  @Test
+  void testMapOfPrimitives() {
+    // Arrange
+    JMap map = new JMap(
+        new JPrimitive(
+            "primitive",
+            defaultConfig,
+            null,
+            Boolean.FALSE,
+            null,
+            null),
+        defaultConfig,
+        null,
+        Boolean.FALSE,
+        null);
 
-    @Test
-    void testObjectWithRequiredField() {
-        // Arrange
-        CompilationUnit cu = new CompilationUnit();
-        Map<String, JSONSchemaProps> props = new HashMap<>();
-        JSONSchemaProps newBool = new JSONSchemaProps();
-        newBool.setType("boolean");
-        props.put("o1", newBool);
-        List<String> req = new ArrayList<>(1);
-        req.add("o1");
-        JObject obj = new JObject("t", props, req, dummyOptions);
+    // Act
+    GeneratorResult res = map.generateJava();
 
-        // Act
-        GeneratorResult res = obj.generateJava(cu);
+    // Assert
+    assertEquals("java.util.Map<java.lang.String, primitive>", map.getType());
+    assertEquals(0, res.getTopLevelClasses().size());
+  }
 
-        // Assert
-        Optional<ClassOrInterfaceDeclaration> clz = cu.getClassByName("T");
-        assertTrue(clz.get().getFieldByName("o1").get().getAnnotationByName("NotNull").isPresent());
-    }
+  @Test
+  void testEmptyObject() {
+    // Arrange
+    JObject obj = new JObject(
+        "v1alpha1",
+        "t",
+        null,
+        null,
+        false,
+        "",
+        "", defaultConfig,
+        null,
+        Boolean.FALSE,
+        null);
 
-    @Test
-    void testEnum() {
-        // Arrange
-        CompilationUnit cu = new CompilationUnit();
-        Map<String, JSONSchemaProps> props = new HashMap<>();
-        JSONSchemaProps newEnum = new JSONSchemaProps();
-        newEnum.setType("string");
-        List<JsonNode> enumValues = new ArrayList<>();
-        enumValues.add(new TextNode("foo"));
-        enumValues.add(new TextNode("bar"));
-        enumValues.add(new TextNode("baz"));
-        props.put("e1", newEnum);
-        JEnum enu = new JEnum("t", enumValues);
+    // Act
+    GeneratorResult res = obj.generateJava();
 
-        // Act
-        GeneratorResult res = enu.generateJava(cu);
+    // Assert
+    assertEquals("v1alpha1.T", obj.getType());
+    assertEquals(1, res.getTopLevelClasses().size());
+    assertEquals("T", res.getTopLevelClasses().get(0).getName());
+  }
 
-        // Assert
-        assertEquals("T", enu.getType());
-        assertEquals(1, res.getInnerClasses().size());
-        assertEquals("T", res.getInnerClasses().get(0));
+  @Test
+  void testEmptyObjectWithSuffix() {
+    // Arrange
+    Config config = new Config(null, null, Config.Suffix.ALWAYS, null, null, null);
+    JObject obj = new JObject(
+        "v1alpha1",
+        "t",
+        null,
+        null,
+        false,
+        "",
+        "MySuffix",
+        config,
+        null,
+        Boolean.FALSE,
+        null);
 
-        Optional<EnumDeclaration> en = cu.getEnumByName("T");
-        assertTrue(en.isPresent());
-        assertEquals(3, en.get().getEntries().size());
-        assertEquals("foo", en.get().getEntries().get(0).getName().asString());
-        assertEquals("bar", en.get().getEntries().get(1).getName().asString());
-        assertEquals("baz", en.get().getEntries().get(2).getName().asString());
-    }
+    // Act
+    GeneratorResult res = obj.generateJava();
 
-    @Test
-    void testArrayOfObjects() {
-        // Arrange
-        JArray array = new JArray(new JObject("t", null, null, dummyOptions));
+    // Assert
+    assertEquals("v1alpha1.TMySuffix", obj.getType());
+    assertEquals(1, res.getTopLevelClasses().size());
+    assertEquals("TMySuffix", res.getTopLevelClasses().get(0).getName());
+  }
 
-        // Act
-        GeneratorResult res = array.generateJava(new CompilationUnit());
+  @Test
+  void testEmptyObjectWithoutNamespace() {
+    // Arrange
+    JObject obj = new JObject(
+        null,
+        "t",
+        null,
+        null,
+        false,
+        "",
+        "",
+        defaultConfig,
+        null,
+        Boolean.FALSE,
+        null);
 
-        // Assert
-        assertEquals("java.util.List<T>", array.getType());
-        assertEquals(1, res.getTopLevelClasses().size());
-        assertEquals("T", res.getTopLevelClasses().get(0));
-    }
+    // Act
+    GeneratorResult res = obj.generateJava();
 
-    @Test
-    void testMapOfObjects() {
-        // Arrange
-        JMap map = new JMap(new JObject("t", null, null, dummyOptions));
+    // Assert
+    assertEquals("T", obj.getType());
+    assertEquals(1, res.getTopLevelClasses().size());
+    assertEquals("T", res.getTopLevelClasses().get(0).getName());
+  }
 
-        // Act
-        GeneratorResult res = map.generateJava(new CompilationUnit());
+  @Test
+  void testObjectOfPrimitives() {
+    // Arrange
+    Map<String, JSONSchemaProps> props = new HashMap<>();
+    JSONSchemaProps newBool = new JSONSchemaProps();
+    newBool.setType("boolean");
+    props.put("o1", newBool);
+    JObject obj = new JObject(
+        "v1alpha1",
+        "t",
+        props,
+        null,
+        false,
+        "",
+        "",
+        defaultConfig,
+        null,
+        Boolean.FALSE,
+        null);
 
-        // Assert
-        assertEquals("java.util.Map<java.lang.String, T>", map.getType());
-        assertEquals(1, res.getTopLevelClasses().size());
-        assertEquals("T", res.getTopLevelClasses().get(0));
-    }
+    // Act
+    GeneratorResult res = obj.generateJava();
 
-    @Test
-    void testObjectOfObjects() {
-        // Arrange
-        CompilationUnit cu = new CompilationUnit();
-        Map<String, JSONSchemaProps> props = new HashMap<>();
-        JSONSchemaProps newObj = new JSONSchemaProps();
-        newObj.setType("object");
-        props.put("o1", newObj);
-        JObject obj = new JObject("t", props, null, dummyOptions);
+    // Assert
+    assertEquals("v1alpha1.T", obj.getType());
+    assertEquals(1, res.getTopLevelClasses().size());
+    assertEquals("T", res.getTopLevelClasses().get(0).getName());
 
-        // Act
-        GeneratorResult res = obj.generateJava(cu);
+    Optional<ClassOrInterfaceDeclaration> clz = res.getTopLevelClasses().get(0).getCompilationUnit().getClassByName("T");
+    assertTrue(clz.isPresent());
+    assertEquals(1, clz.get().getFields().size());
+    assertTrue(clz.get().getFieldByName("o1").isPresent());
+  }
 
-        // Assert
-        assertEquals(2, res.getTopLevelClasses().size());
-        assertEquals("O1", res.getTopLevelClasses().get(0));
-        assertEquals("T", res.getTopLevelClasses().get(1));
+  @Test
+  void testObjectWithRequiredField() {
+    // Arrange
+    Map<String, JSONSchemaProps> props = new HashMap<>();
+    JSONSchemaProps newBool = new JSONSchemaProps();
+    newBool.setType("boolean");
+    props.put("o1", newBool);
+    List<String> req = new ArrayList<>(1);
+    req.add("o1");
+    JObject obj = new JObject(
+        "v1alpha1",
+        "t",
+        props,
+        req,
+        false,
+        "",
+        "",
+        defaultConfig,
+        null,
+        Boolean.FALSE,
+        null);
 
-        Optional<ClassOrInterfaceDeclaration> clzT = cu.getClassByName("T");
-        assertTrue(clzT.isPresent());
-        assertEquals(1, clzT.get().getFields().size());
-        assertTrue(clzT.get().getFieldByName("o1").isPresent());
-        Optional<ClassOrInterfaceDeclaration> clzO1 = cu.getClassByName("O1");
-        assertTrue(clzO1.isPresent());
-    }
+    // Act
+    GeneratorResult res = obj.generateJava();
 
-    @Test
-    void testObjectWithPreservedFields() {
-        // Arrange
-        CompilationUnit cu = new CompilationUnit();
-        JObject obj = new JObject("t", null, null, new JObjectOptions(true, "", ""));
+    // Assert
+    Optional<ClassOrInterfaceDeclaration> clz = res.getTopLevelClasses().get(0).getCompilationUnit().getClassByName("T");
+    assertTrue(clz.get().getFieldByName("o1").get().getAnnotationByName("Required").isPresent());
+  }
 
-        // Act
-        GeneratorResult res = obj.generateJava(cu);
+  @Test
+  void testDefaultEnum() {
+    // Arrange
+    Map<String, JSONSchemaProps> props = new HashMap<>();
+    JSONSchemaProps newEnum = new JSONSchemaProps();
+    newEnum.setType("string");
+    List<JsonNode> enumValues = new ArrayList<>();
+    enumValues.add(new TextNode("foo"));
+    enumValues.add(new TextNode("bar"));
+    enumValues.add(new TextNode("baz"));
+    props.put("e1", newEnum);
+    JEnum enu = new JEnum(
+        "t",
+        enumValues,
+        defaultConfig,
+        null,
+        Boolean.FALSE,
+        null);
 
-        // Assert
-        assertEquals(1, res.getTopLevelClasses().size());
-        assertEquals("T", res.getTopLevelClasses().get(0));
+    // Act
+    GeneratorResult res = enu.generateJava();
 
-        Optional<ClassOrInterfaceDeclaration> clzT = cu.getClassByName("T");
-        assertTrue(clzT.isPresent());
-        assertTrue(clzT.get().getFieldByName("additionalProperties").isPresent());
-    }
+    // Assert
+    assertEquals("T", enu.getType());
+    assertEquals(1, res.getInnerClasses().size());
+    assertEquals("T", res.getInnerClasses().get(0).getName());
+
+    Optional<EnumDeclaration> en = res.getInnerClasses().get(0).getCompilationUnit().getEnumByName("T");
+    assertTrue(en.isPresent());
+    assertEquals(3, en.get().getEntries().size());
+    assertEquals("FOO", en.get().getEntries().get(0).getName().asString());
+    assertEquals("BAR", en.get().getEntries().get(1).getName().asString());
+    assertEquals("BAZ", en.get().getEntries().get(2).getName().asString());
+  }
+
+  @Test
+  void testNotUppercaseEnum() {
+    // Arrange
+    CompilationUnit cu = new CompilationUnit();
+    Map<String, JSONSchemaProps> props = new HashMap<>();
+    JSONSchemaProps newEnum = new JSONSchemaProps();
+    newEnum.setType("string");
+    List<JsonNode> enumValues = new ArrayList<>();
+    enumValues.add(new TextNode("foo"));
+    enumValues.add(new TextNode("bar"));
+    enumValues.add(new TextNode("baz"));
+    props.put("e1", newEnum);
+    JEnum enu = new JEnum(
+        "t",
+        enumValues,
+        new Config(false, null, null, null, null, null),
+        null,
+        Boolean.FALSE,
+        null);
+
+    // Act
+    GeneratorResult res = enu.generateJava();
+
+    // Assert
+    assertEquals("T", enu.getType());
+    assertEquals(1, res.getInnerClasses().size());
+    assertEquals("T", res.getInnerClasses().get(0).getName());
+
+    Optional<EnumDeclaration> en = res.getInnerClasses().get(0).getCompilationUnit().getEnumByName("T");
+    assertTrue(en.isPresent());
+    assertEquals(3, en.get().getEntries().size());
+    assertEquals("foo", en.get().getEntries().get(0).getName().asString());
+    assertEquals("bar", en.get().getEntries().get(1).getName().asString());
+    assertEquals("baz", en.get().getEntries().get(2).getName().asString());
+  }
+
+  @Test
+  void testArrayOfObjects() {
+    // Arrange
+    JArray array = new JArray(
+        new JObject(
+            null,
+            "t",
+            null,
+            null,
+            false,
+            "",
+            "",
+            defaultConfig,
+            null,
+            Boolean.FALSE,
+            null),
+        defaultConfig,
+        null,
+        false,
+        null);
+
+    // Act
+    GeneratorResult res = array.generateJava();
+
+    // Assert
+    assertEquals("java.util.List<T>", array.getType());
+    assertEquals(1, res.getTopLevelClasses().size());
+    assertEquals("T", res.getTopLevelClasses().get(0).getName());
+  }
+
+  @Test
+  void testMapOfObjects() {
+    // Arrange
+    JMap map = new JMap(
+        new JObject(
+            null,
+            "t",
+            null,
+            null,
+            false,
+            "",
+            "",
+            defaultConfig,
+            null,
+            Boolean.FALSE,
+            null),
+        defaultConfig,
+        null,
+        Boolean.FALSE,
+        null);
+
+    // Act
+    GeneratorResult res = map.generateJava();
+
+    // Assert
+    assertEquals("java.util.Map<java.lang.String, T>", map.getType());
+    assertEquals(1, res.getTopLevelClasses().size());
+    assertEquals("T", res.getTopLevelClasses().get(0).getName());
+  }
+
+  @Test
+  void testObjectOfObjects() {
+    // Arrange
+    Map<String, JSONSchemaProps> props = new HashMap<>();
+    JSONSchemaProps newObj = new JSONSchemaProps();
+    newObj.setType("object");
+    props.put("o1", newObj);
+    JObject obj = new JObject(
+        null,
+        "t",
+        props,
+        null,
+        false,
+        "",
+        "",
+        defaultConfig,
+        null,
+        Boolean.FALSE,
+        null);
+
+    // Act
+    GeneratorResult res = obj.generateJava();
+
+    // Assert
+    assertEquals(2, res.getTopLevelClasses().size());
+    assertEquals("O1", res.getTopLevelClasses().get(0).getName());
+    assertEquals("T", res.getTopLevelClasses().get(1).getName());
+
+    Optional<ClassOrInterfaceDeclaration> clzT = res.getTopLevelClasses().get(1).getCompilationUnit().getClassByName("T");
+    assertTrue(clzT.isPresent());
+    assertEquals(1, clzT.get().getFields().size());
+    assertTrue(clzT.get().getFieldByName("o1").isPresent());
+    Optional<ClassOrInterfaceDeclaration> clzO1 = res.getTopLevelClasses().get(0).getCompilationUnit().getClassByName("O1");
+    assertTrue(clzO1.isPresent());
+  }
+
+  @Test
+  void testObjectOfObjectsWithTopLevelPrefix() {
+    // Arrange
+    Config config = new Config(null, Config.Prefix.TOP_LEVEL, null, null, null, null);
+    Map<String, JSONSchemaProps> props = new HashMap<>();
+    JSONSchemaProps newObj = new JSONSchemaProps();
+    newObj.setType("object");
+    props.put("o1", newObj);
+    JObject obj = new JObject(
+        null,
+        "t",
+        props,
+        null,
+        false,
+        "My",
+        "",
+        config,
+        null,
+        Boolean.FALSE,
+        null);
+
+    // Act
+    GeneratorResult res = obj.generateJava();
+
+    // Assert
+    assertEquals(2, res.getTopLevelClasses().size());
+    assertEquals("O1", res.getTopLevelClasses().get(0).getName());
+    assertEquals("MyT", res.getTopLevelClasses().get(1).getName());
+  }
+
+  @Test
+  void testObjectOfObjectsWithAlwaysPrefix() {
+    // Arrange
+    Config config = new Config(null, Config.Prefix.ALWAYS, null, null, null, null);
+    Map<String, JSONSchemaProps> props = new HashMap<>();
+    JSONSchemaProps newObj = new JSONSchemaProps();
+    newObj.setType("object");
+    props.put("o1", newObj);
+    JObject obj = new JObject(
+        null,
+        "t",
+        props,
+        null,
+        false,
+        "My",
+        "",
+        config,
+        null,
+        Boolean.FALSE,
+        null);
+
+    // Act
+    GeneratorResult res = obj.generateJava();
+
+    // Assert
+    assertEquals(2, res.getTopLevelClasses().size());
+    assertEquals("MyO1", res.getTopLevelClasses().get(0).getName());
+    assertEquals("MyT", res.getTopLevelClasses().get(1).getName());
+  }
+
+  @Test
+  void testObjectWithPreservedFields() {
+    // Arrange
+    JObject obj = new JObject(
+        null,
+        "t",
+        null,
+        null,
+        true,
+        "",
+        "",
+        defaultConfig,
+        null,
+        Boolean.FALSE,
+        null);
+
+    // Act
+    GeneratorResult res = obj.generateJava();
+
+    // Assert
+    assertEquals(1, res.getTopLevelClasses().size());
+    assertEquals("T", res.getTopLevelClasses().get(0).getName());
+
+    Optional<ClassOrInterfaceDeclaration> clzT = res.getTopLevelClasses().get(0).getCompilationUnit().getClassByName("T");
+    assertTrue(clzT.isPresent());
+    assertTrue(clzT.get().getFieldByName("additionalProperties").isPresent());
+  }
+
+  @Test
+  void testObjectNullableFieldsManagement() {
+    // Arrange
+    Map<String, JSONSchemaProps> props = new HashMap<>();
+    JSONSchemaProps nullableObj = new JSONSchemaProps();
+    nullableObj.setType("object");
+    nullableObj.setNullable(Boolean.TRUE);
+    props.put("o1", nullableObj);
+
+    JSONSchemaProps nonNullableObj = new JSONSchemaProps();
+    nonNullableObj.setType("object");
+    nonNullableObj.setNullable(Boolean.FALSE);
+    props.put("o2", nonNullableObj);
+
+    JObject obj = new JObject(null, "t", props, null, false, "", "", defaultConfig, null, Boolean.FALSE, null);
+
+    // Act
+    GeneratorResult res = obj.generateJava();
+
+    // Assert
+    assertEquals(3, res.getTopLevelClasses().size());
+    assertEquals("O1", res.getTopLevelClasses().get(0).getName());
+    assertEquals("O2", res.getTopLevelClasses().get(1).getName());
+    assertEquals("T", res.getTopLevelClasses().get(2).getName());
+
+    Optional<ClassOrInterfaceDeclaration> clzT = res.getTopLevelClasses().get(2).getCompilationUnit().getClassByName("T");
+    assertTrue(clzT.isPresent());
+    assertEquals(2, clzT.get().getFields().size());
+    Optional<FieldDeclaration> o1Field = clzT.get().getFieldByName("o1");
+    assertTrue(o1Field.isPresent());
+    FieldDeclaration actualO1Field = o1Field.get();
+    Optional<AnnotationExpr> nullableJacksonBasedAnnotation = actualO1Field
+        .getAnnotationByName("com.fasterxml.jackson.annotation.JsonSetter");
+    assertTrue(nullableJacksonBasedAnnotation.isPresent());
+    assertInstanceOf(SingleMemberAnnotationExpr.class, nullableJacksonBasedAnnotation.get());
+    SingleMemberAnnotationExpr actualNullableAnnotation = (SingleMemberAnnotationExpr) nullableJacksonBasedAnnotation.get();
+    assertEquals("nulls = com.fasterxml.jackson.annotation.Nulls.SET", actualNullableAnnotation.getMemberValue().toString());
+    Optional<AnnotationExpr> nullableFabric8BasedAnnotation = actualO1Field.getAnnotationByName("Nullable");
+    assertTrue(nullableFabric8BasedAnnotation.isPresent());
+
+    Optional<FieldDeclaration> o2Field = clzT.get().getFieldByName("o2");
+    assertTrue(o2Field.isPresent());
+    FieldDeclaration actualO2Field = o2Field.get();
+    nullableJacksonBasedAnnotation = actualO2Field.getAnnotationByName("com.fasterxml.jackson.annotation.JsonSetter");
+    assertTrue(nullableJacksonBasedAnnotation.isPresent());
+    assertInstanceOf(SingleMemberAnnotationExpr.class, nullableJacksonBasedAnnotation.get());
+    actualNullableAnnotation = (SingleMemberAnnotationExpr) nullableJacksonBasedAnnotation.get();
+    assertEquals("nulls = com.fasterxml.jackson.annotation.Nulls.SKIP", actualNullableAnnotation.getMemberValue().toString());
+
+    Optional<ClassOrInterfaceDeclaration> clzO1 = res.getTopLevelClasses().get(0).getCompilationUnit().getClassByName("O1");
+    assertTrue(clzO1.isPresent());
+  }
+
+  @Test
+  void testClassNamesDisambiguationWithPackageNesting() {
+    // Arrange
+    Map<String, JSONSchemaProps> props = new HashMap<>();
+    JSONSchemaProps newObj1 = new JSONSchemaProps();
+    JSONSchemaProps newObj2 = new JSONSchemaProps();
+    newObj1.setType("object");
+    newObj2.setType("object");
+    Map<String, JSONSchemaProps> obj2Props = new HashMap<>();
+    obj2Props.put("o1", newObj1);
+    obj2Props.put("o2", newObj1);
+    obj2Props.put("o3", newObj1);
+    newObj2.setProperties(obj2Props);
+    props.put("o1", newObj1);
+    props.put("o2", newObj2);
+    JObject obj = new JObject("v1alpha1", "t", props, null, false, "", "", defaultConfig, null, Boolean.FALSE, null);
+
+    // Act
+    GeneratorResult res = obj.generateJava();
+
+    // Assert
+    assertEquals(6, res.getTopLevelClasses().size());
+    // The order here is not important
+    assertEquals("O1", res.getTopLevelClasses().get(0).getName());
+    assertEquals("O1", res.getTopLevelClasses().get(1).getName());
+    assertEquals("O2", res.getTopLevelClasses().get(2).getName());
+    assertEquals("O3", res.getTopLevelClasses().get(3).getName());
+    assertEquals("O2", res.getTopLevelClasses().get(4).getName());
+    assertEquals("T", res.getTopLevelClasses().get(5).getName());
+
+    CompilationUnit cuT = res.getTopLevelClasses().get(5).getCompilationUnit();
+    Optional<ClassOrInterfaceDeclaration> clzT = cuT.getClassByName("T");
+    assertTrue(clzT.isPresent());
+    assertEquals(2, clzT.get().getFields().size());
+    assertTrue(clzT.get().getFieldByName("o1").isPresent());
+    assertEquals("v1alpha1", cuT.getPackageDeclaration().get().getNameAsString());
+    assertEquals(
+        "v1alpha1.t.O1", clzT.get().getFieldByName("o1").get().getElementType().toString());
+    CompilationUnit cuO1 = res.getTopLevelClasses().get(0).getCompilationUnit();
+    Optional<ClassOrInterfaceDeclaration> clzO1 = cuO1.getClassByName("O1");
+    assertTrue(clzO1.isPresent());
+    assertEquals("v1alpha1.t", cuO1.getPackageDeclaration().get().getNameAsString());
+    CompilationUnit cuO2 = res.getTopLevelClasses().get(4).getCompilationUnit();
+    Optional<ClassOrInterfaceDeclaration> clzO2 = cuO2.getClassByName("O2");
+    assertTrue(clzO2.isPresent());
+    assertTrue(clzO2.get().getFieldByName("o1").isPresent());
+    assertEquals("v1alpha1.t", cuO2.getPackageDeclaration().get().getNameAsString());
+    assertEquals(
+        "v1alpha1.t.o2.O1",
+        clzO2.get().getFieldByName("o1").get().getElementType().toString());
+    assertTrue(clzO2.get().getFieldByName("o2").isPresent());
+    assertTrue(clzO2.get().getFieldByName("o3").isPresent());
+  }
+
+  @Test
+  void testObjectDefaultFieldsManagement() {
+    // Arrange
+    Map<String, JSONSchemaProps> props = new HashMap<>();
+
+    JSONSchemaProps objWithDefaultValues = new JSONSchemaProps();
+    objWithDefaultValues.setType("object");
+    String jsonContent = "{\"limits\":{\"memory\":\"1024Mi\",\"cpu\":\"\"},\"requests\":{\"memory\":\"1024Mi\",\"cpu\":\"1\"}}";
+    JsonNode defaultValue = Serialization.unmarshal(jsonContent, JsonNode.class);
+    objWithDefaultValues.setDefault(defaultValue);
+    props.put("o1", objWithDefaultValues);
+
+    JSONSchemaProps objWithoutDefaultValues = new JSONSchemaProps();
+    objWithoutDefaultValues.setType("object");
+    props.put("o2", objWithoutDefaultValues);
+
+    JObject obj = new JObject(null, "t", props, null, false, "", "", defaultConfig, null, Boolean.FALSE, null);
+
+    // Act
+    GeneratorResult res = obj.generateJava();
+
+    // Assert
+    assertEquals(3, res.getTopLevelClasses().size());
+    assertEquals("O1", res.getTopLevelClasses().get(0).getName());
+    assertEquals("O2", res.getTopLevelClasses().get(1).getName());
+    assertEquals("T", res.getTopLevelClasses().get(2).getName());
+
+    Optional<ClassOrInterfaceDeclaration> clzT = res.getTopLevelClasses().get(2).getCompilationUnit().getClassByName("T");
+    assertTrue(clzT.isPresent());
+    assertEquals(2, clzT.get().getFields().size());
+
+    Optional<FieldDeclaration> o1Field = clzT.get().getFieldByName("o1");
+    assertTrue(o1Field.isPresent());
+    FieldDeclaration actualO1Field = o1Field.get();
+    VariableDeclarator variableDeclarator = actualO1Field.getVariable(0);
+    assertNotNull(variableDeclarator);
+    Optional<Expression> initializer = variableDeclarator.getInitializer();
+    assertTrue(initializer.isPresent());
+
+    Optional<FieldDeclaration> o2Field = clzT.get().getFieldByName("o2");
+    assertTrue(o2Field.isPresent());
+    FieldDeclaration actualO2Field = o2Field.get();
+    variableDeclarator = actualO2Field.getVariable(0);
+    assertNotNull(variableDeclarator);
+    initializer = variableDeclarator.getInitializer();
+    assertFalse(initializer.isPresent());
+
+    Optional<ClassOrInterfaceDeclaration> clzO1 = res.getTopLevelClasses().get(0).getCompilationUnit().getClassByName("O1");
+    assertTrue(clzO1.isPresent());
+
+    Optional<ClassOrInterfaceDeclaration> clzO2 = res.getTopLevelClasses().get(1).getCompilationUnit().getClassByName("O2");
+    assertTrue(clzO2.isPresent());
+  }
 }

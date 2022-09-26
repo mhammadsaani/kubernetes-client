@@ -17,18 +17,23 @@ package io.fabric8.kubernetes.client;
 
 import io.fabric8.kubernetes.client.dsl.FlowControlAPIGroupDSL;
 import io.fabric8.kubernetes.client.dsl.V1beta1FlowControlAPIGroupDSL;
+import io.fabric8.kubernetes.client.dsl.V1beta2FlowControlAPIGroupDSL;
+import io.fabric8.kubernetes.client.extension.ClientAdapter;
 
-public class FlowControlAPIGroupClient extends BaseClient implements FlowControlAPIGroupDSL {
-  public FlowControlAPIGroupClient() {
-    super();
-  }
-
-  public FlowControlAPIGroupClient(ClientContext clientContext) {
-    super(clientContext);
-  }
+public class FlowControlAPIGroupClient extends ClientAdapter<FlowControlAPIGroupClient> implements FlowControlAPIGroupDSL {
 
   @Override
   public V1beta1FlowControlAPIGroupDSL v1beta1() {
     return adapt(V1beta1FlowControlAPIGroupClient.class);
+  }
+
+  @Override
+  public V1beta2FlowControlAPIGroupDSL v1beta2() {
+    return adapt(V1beta2FlowControlAPIGroupClient.class);
+  }
+
+  @Override
+  public FlowControlAPIGroupClient newInstance() {
+    return new FlowControlAPIGroupClient();
   }
 }

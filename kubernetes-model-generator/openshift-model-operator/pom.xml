@@ -23,7 +23,7 @@
   <parent>
     <groupId>io.fabric8</groupId>
     <artifactId>kubernetes-model-generator</artifactId>
-    <version>6.0-SNAPSHOT</version>
+    <version>6.2-SNAPSHOT</version>
   </parent>
 
   <artifactId>openshift-model-operator</artifactId>
@@ -32,6 +32,16 @@
 
   <properties>
     <clone-kube>true</clone-kube>
+    <osgi.include.resources>
+      ${osgi.include.resources.default},
+      /operator.properties=target/classes/operator.properties
+    </osgi.include.resources>
+    <osgi.import>*</osgi.import>
+    <osgi.export>
+      io.fabric8.openshift.api.model.operator**,
+      io.fabric8.openshift.api.model.imageregistry**,
+      io.fabric8.openshift.api.model.controlpane.operator**,
+    </osgi.export>
   </properties>
 
   <dependencies>
@@ -42,6 +52,10 @@
     <dependency>
       <groupId>io.fabric8</groupId>
       <artifactId>kubernetes-model-common</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.fabric8</groupId>
+      <artifactId>openshift-model-config</artifactId>
     </dependency>
   </dependencies>
 
@@ -58,28 +72,6 @@
             </configuration>
           </execution>
         </executions>
-      </plugin>
-      <plugin>
-        <groupId>org.apache.felix</groupId>
-        <artifactId>maven-bundle-plugin</artifactId>
-        <version>${maven.bundle.plugin.version}</version>
-        <extensions>true</extensions>
-        <configuration>
-          <instructions>
-            <Bundle-SymbolicName>${project.groupId}.${project.artifactId}</Bundle-SymbolicName>
-            <Import-Package>*</Import-Package>
-            <Export-Package>
-              io.fabric8.openshift.api.model.operator**,
-              io.fabric8.openshift.api.model.imageregistry**,
-              io.fabric8.openshift.api.model.controlpane.operator**,
-            </Export-Package>
-            <Include-Resource>
-              {maven-resources},
-              /META-INF/jandex.idx=target/classes/META-INF/jandex.idx,
-              /operator.properties=target/classes/operator.properties
-            </Include-Resource>
-          </instructions>
-        </configuration>
       </plugin>
     </plugins>
   </build>

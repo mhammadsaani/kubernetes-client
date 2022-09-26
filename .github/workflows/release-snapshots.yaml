@@ -16,29 +16,43 @@
 
 name: Release to SNAPSHOTS Maven Central
 
+on:
+  workflow_dispatch:
+    inputs:
+      additional_args:
+        description: Additional Maven Args
+        required: false
+        default: ''
+  schedule:
+    - cron: '0 2 * * *' # Every day at 2am
+
 env:
-  MAVEN_ARGS: -B -C -V -ntp -Dhttp.keepAlive=false -e
+  MAVEN_ARGS: -B -C -V -ntp -Dhttp.keepAlive=false -e ${{ github.event.inputs.additional_args }}
+  RELEASE_MAVEN_ARGS: -Prelease -Denforcer.skip=true
   OSSRHUSERNAME: ${{ secrets.OSSRHUSERNAME }}
   OSSRHPASSWORD: ${{ secrets.OSSRHPASSWORD }}
   SIGNINGPASSWORD: ${{ secrets.SIGNINGPASSWORD }}
 
-on:
-  workflow_dispatch:
-  schedule:
-    - cron: '0 2 * * *' # Every day at 3am
+#permissions:
+#  contents: read
 
 jobs:
-  release-snapshots:
-    name: Release SNAPSHOT
+  build-release-java-8-snapshot:
+    name: Release Java 8 SNAPSHOT
     # Cheap way to prevent accidental releases
     # Modify the list to add users with release permissions
     if: contains('["manusa","rohanKanojia"]', github.actor)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v2.4.0
-      - name: Setup Java
-        uses: actions/setup-java@v2
+        uses: actions/checkout@v3
+      - name: Cache .m2 registry
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2/repository
+          key: cache-snapshot-release-${{ github.sha }}-${{ github.run_id }}
+      - name: Setup Java 8
+        uses: actions/setup-java@v3
         with:
           java-version: 8
           distribution: temurin
@@ -47,5 +61,32 @@ jobs:
           server-password: OSSRHPASSWORD
           gpg-private-key: ${{ secrets.SIGNINGKEY }}
           gpg-passphrase: SIGNINGPASSWORD
-      - name: Build and Release Project
-        run: mvn ${MAVEN_ARGS} -Prelease clean deploy -DstagingProgressTimeoutMinutes=20 -Denforcer.skip=true
+      - name: Build and release Java 8 modules
+        run: ./mvnw ${MAVEN_ARGS} ${RELEASE_MAVEN_ARGS} clean deploy
+  build-release-java-11-snapshot:
+    needs: build-release-java-8-snapshot
+    name: Release Java 11 SNAPSHOT
+    # Cheap way to prevent accidental releases
+    # Modify the list to add users with release permissions
+    if: contains('["manusa","rohanKanojia"]', github.actor)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Cache .m2 registry
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2/repository
+          key: cache-snapshot-release-${{ github.sha }}-${{ github.run_id }}
+      - name: Setup Java 11
+        uses: actions/setup-java@v3
+        with:
+          java-version: 11
+          distribution: temurin
+          server-id: ossrh
+          server-username: OSSRHUSERNAME
+          server-password: OSSRHPASSWORD
+          gpg-private-key: ${{ secrets.SIGNINGKEY }}
+          gpg-passphrase: SIGNINGPASSWORD
+      - name: Build and release Java 11 modules
+        run: ./mvnw ${MAVEN_ARGS} ${RELEASE_MAVEN_ARGS} -pl "httpclient-jdk" -pl "httpclient-jetty" clean deploy

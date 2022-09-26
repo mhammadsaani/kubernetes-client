@@ -17,43 +17,35 @@ package io.fabric8.camelk.client;
 
 import io.fabric8.camelk.client.dsl.V1APIGroupDSL;
 import io.fabric8.camelk.client.dsl.V1alpha1APIGroupDSL;
-import io.fabric8.kubernetes.client.BaseClient;
-import io.fabric8.kubernetes.client.ClientContext;
+import io.fabric8.kubernetes.client.Client;
 import io.fabric8.kubernetes.client.Config;
-import io.fabric8.kubernetes.client.ConfigBuilder;
 import io.fabric8.kubernetes.client.RequestConfig;
 import io.fabric8.kubernetes.client.WithRequestCallable;
 import io.fabric8.kubernetes.client.dsl.FunctionCallable;
+import io.fabric8.kubernetes.client.extension.ExtensionRootClientAdapter;
+import io.fabric8.kubernetes.client.extension.SupportTestingClient;
 
-public class DefaultCamelKClient extends BaseClient implements NamespacedCamelKClient {
+public class DefaultCamelKClient extends ExtensionRootClientAdapter<DefaultCamelKClient>
+    implements NamespacedCamelKClient, SupportTestingClient {
 
   public DefaultCamelKClient() {
     super();
   }
 
-  public DefaultCamelKClient(Config configuration) {
-    super(configuration);
+  public DefaultCamelKClient(Config config) {
+    super(config);
   }
 
-  public DefaultCamelKClient(ClientContext clientContext) {
-    super(clientContext);
-  }
-
-  @Override
-  public NamespacedCamelKClient inAnyNamespace() {
-    return inNamespace(null);
+  public DefaultCamelKClient(Client client) {
+    super(client);
   }
 
   @Override
-  public NamespacedCamelKClient inNamespace(String namespace) {
-    Config updated = new ConfigBuilder(getConfiguration())
-      .withNamespace(namespace)
-      .build();
-
-    return new DefaultCamelKClient(newState(updated));
+  protected DefaultCamelKClient newInstance(Client client) {
+    return new DefaultCamelKClient(client);
   }
 
-@Override
+  @Override
   public FunctionCallable<NamespacedCamelKClient> withRequestConfig(RequestConfig requestConfig) {
     return new WithRequestCallable<>(this, requestConfig);
   }
@@ -66,6 +58,11 @@ public class DefaultCamelKClient extends BaseClient implements NamespacedCamelKC
   @Override
   public V1alpha1APIGroupDSL v1alpha1() {
     return adapt(V1alpha1APIGroupClient.class);
+  }
+
+  @Override
+  public boolean isSupported() {
+    return hasApiGroup("camel.apache.org", true);
   }
 
 }

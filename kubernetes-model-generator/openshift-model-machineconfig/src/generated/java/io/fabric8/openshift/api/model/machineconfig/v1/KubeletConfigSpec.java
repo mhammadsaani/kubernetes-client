@@ -2,6 +2,7 @@
 package io.fabric8.openshift.api.model.machineconfig.v1;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import com.fasterxml.jackson.annotation.JsonAnyGetter;
 import com.fasterxml.jackson.annotation.JsonAnySetter;
@@ -19,7 +20,7 @@ import io.fabric8.kubernetes.api.model.ObjectReference;
 import io.fabric8.kubernetes.api.model.PersistentVolumeClaim;
 import io.fabric8.kubernetes.api.model.PodTemplateSpec;
 import io.fabric8.kubernetes.api.model.ResourceRequirements;
-import io.fabric8.openshift.api.model.TLSSecurityProfile;
+import io.fabric8.openshift.api.model.config.v1.TLSSecurityProfile;
 import io.sundr.builder.annotations.Buildable;
 import io.sundr.builder.annotations.BuildableReference;
 import lombok.EqualsAndHashCode;
@@ -63,7 +64,8 @@ public class KubeletConfigSpec implements KubernetesResource
     @JsonProperty("autoSizingReserved")
     private Boolean autoSizingReserved;
     @JsonProperty("kubeletConfig")
-    private Map<String, Object> kubeletConfig;
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    private Map<String, Object> kubeletConfig = new LinkedHashMap<String, Object>();
     @JsonProperty("logLevel")
     private Integer logLevel;
     @JsonProperty("machineConfigPoolSelector")

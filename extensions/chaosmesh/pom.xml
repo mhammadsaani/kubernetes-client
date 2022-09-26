@@ -22,12 +22,16 @@
   <parent>
     <artifactId>kubernetes-extensions</artifactId>
     <groupId>io.fabric8</groupId>
-    <version>6.0-SNAPSHOT</version>
+    <version>6.2-SNAPSHOT</version>
   </parent>
 
   <artifactId>chaosmesh</artifactId>
   <packaging>pom</packaging>
   <name>Fabric8 :: Chaos Mesh :: Extension</name>
+  
+  <properties>
+    <jsonschema2pojo.targetPackage>io.fabric8.chaosmesh.api.model</jsonschema2pojo.targetPackage>
+  </properties>
 
   <modules>
     <module>model</module>

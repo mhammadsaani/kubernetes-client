@@ -16,15 +16,13 @@
 package io.fabric8.kubernetes.client;
 
 import io.fabric8.kubernetes.client.dsl.AutoscalingAPIGroupDSL;
+import io.fabric8.kubernetes.client.extension.ClientAdapter;
 
-public class AutoscalingAPIGroupClient extends BaseClient implements AutoscalingAPIGroupDSL {
+public class AutoscalingAPIGroupClient extends ClientAdapter<AutoscalingAPIGroupClient> implements AutoscalingAPIGroupDSL {
 
-  public AutoscalingAPIGroupClient() {
-    super();
-  }
-
-  public AutoscalingAPIGroupClient(ClientContext clientContext) {
-    super(clientContext);
+  @Override
+  public V2AutoscalingAPIGroupDSL v2() {
+    return adapt(V2AutoscalingAPIGroupClient.class);
   }
 
   @Override
@@ -40,5 +38,10 @@ public class AutoscalingAPIGroupClient extends BaseClient implements Autoscaling
   @Override
   public V2beta2AutoscalingAPIGroupDSL v2beta2() {
     return adapt(V2beta2AutoscalingAPIGroupClient.class);
+  }
+
+  @Override
+  public AutoscalingAPIGroupClient newInstance() {
+    return new AutoscalingAPIGroupClient();
   }
 }

@@ -16,10 +16,113 @@
 
 package io.fabric8.kubernetes.client;
 
-public class KubernetesClientBuilder extends BaseKubernetesClientBuilder<KubernetesClientBuilder> {
+import io.fabric8.kubernetes.client.http.HttpClient;
+import io.fabric8.kubernetes.client.informers.ResourceEventHandler;
+import io.fabric8.kubernetes.client.utils.Serialization;
+
+import java.io.InputStream;
+import java.lang.reflect.InvocationTargetException;
+import java.util.concurrent.Executor;
+import java.util.function.Supplier;
+
+/**
+ * If no {@link Executor} or {@link ExecutorSupplier} is specified, a default {@link ExecutorSupplier} will
+ * be used which creates an unbounded cached thread pool per client.
+ */
+public class KubernetesClientBuilder {
+
+  @FunctionalInterface
+  public interface ExecutorSupplier extends Supplier<Executor> {
+
+    default void onClose(Executor executor) {
+
+    }
+
+  }
+
+  private Config config;
+  private HttpClient.Factory factory;
+  private Class<KubernetesClient> clazz;
+  private ExecutorSupplier executorSupplier;
 
   public KubernetesClientBuilder() {
-    super("io.fabric8.kubernetes.client.DefaultKubernetesClient");
+    // basically the same logic as in KubernetesResourceUtil for finding list types
+    // we're not guarding against a null context class loader
+    String className = "io.fabric8.kubernetes.client.DefaultKubernetesClient";
+    try {
+      clazz = (Class<KubernetesClient>) Thread.currentThread().getContextClassLoader().loadClass(className);
+    } catch (ClassNotFoundException | ClassCastException e) {
+      try {
+        clazz = (Class<KubernetesClient>) KubernetesClient.class.getClassLoader().loadClass(className);
+      } catch (Exception ex) {
+        throw KubernetesClientException.launderThrowable(ex);
+      }
+    }
+  }
+
+  public KubernetesClient build() {
+    if (config == null) {
+      config = new ConfigBuilder().build();
+    }
+    try {
+      if (factory == null) {
+        return clazz.getConstructor(Config.class).newInstance(config);
+      }
+      HttpClient client = factory.createHttpClient(config);
+      return clazz.getConstructor(HttpClient.class, Config.class, ExecutorSupplier.class).newInstance(client, config,
+          executorSupplier);
+    } catch (InstantiationException | IllegalAccessException | IllegalArgumentException | InvocationTargetException
+        | NoSuchMethodException | SecurityException e) {
+      throw KubernetesClientException.launderThrowable(e);
+    }
+  }
+
+  public KubernetesClientBuilder withConfig(Config config) {
+    this.config = config;
+    return this;
+  }
+
+  public KubernetesClientBuilder withConfig(String config) {
+    this.config = Serialization.unmarshal(config);
+    return this;
+  }
+
+  public KubernetesClientBuilder withConfig(InputStream config) {
+    this.config = Serialization.unmarshal(config);
+    return this;
+  }
+
+  public KubernetesClientBuilder withHttpClientFactory(HttpClient.Factory factory) {
+    this.factory = factory;
+    return this;
+  }
+
+  /**
+   * Configure the client to use the given executor for async tasks, such as {@link ResourceEventHandler}
+   * calls and writing to streams.
+   * <p>
+   * Only override if you need more control over the number of task threads used by the kubernetes client.
+   * 
+   * @return this builder
+   */
+  public KubernetesClientBuilder withTaskExecutor(Executor executor) {
+    this.executorSupplier = () -> executor;
+    return this;
+  }
+
+  /**
+   * Configure the client to use the given {@link ExecutorSupplier} for async tasks, such as {@link ResourceEventHandler}
+   * calls and writing to streams.
+   * <p>
+   * There will be a call to {@link ExecutorSupplier#onClose(Executor)} when a client is closed.
+   * <p>
+   * Only override if you need more control over the number of task threads used by the kubernetes client.
+   * 
+   * @return this builder
+   */
+  public KubernetesClientBuilder withTaskExecutorSupplier(ExecutorSupplier executorSupplier) {
+    this.executorSupplier = executorSupplier;
+    return this;
   }
 
 }

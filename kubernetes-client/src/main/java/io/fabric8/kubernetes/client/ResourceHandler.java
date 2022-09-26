@@ -20,24 +20,26 @@ import io.fabric8.kubernetes.api.builder.VisitableBuilder;
 import io.fabric8.kubernetes.api.model.HasMetadata;
 import io.fabric8.kubernetes.api.model.KubernetesResourceList;
 import io.fabric8.kubernetes.client.dsl.Resource;
-import io.fabric8.kubernetes.client.dsl.base.HasMetadataOperation;
+import io.fabric8.kubernetes.client.dsl.internal.HasMetadataOperation;
 
 public interface ResourceHandler<T extends HasMetadata, V extends VisitableBuilder<T, V>> {
 
   /**
    * Edit the specified resource.
-   * @param item          The resource to edit.
-   * @return              The resource editor.
+   * 
+   * @param item The resource to edit.
+   * @return The resource editor.
    */
   V edit(T item);
 
   /**
    * Create the operation support for the current resource
-   * @param clientContext   The client state
-   * @param listType      The list type
-   * @return              The {@link HasMetadataOperation}
+   * 
+   * @param client The client state
+   * @param listType The list type
+   * @return The {@link HasMetadataOperation}
    */
-  <L extends KubernetesResourceList<T>> HasMetadataOperation<T, L, Resource<T>> operation(ClientContext clientContext, Class<L> listType);
+  <L extends KubernetesResourceList<T>> HasMetadataOperation<T, L, Resource<T>> operation(Client client, Class<L> listType);
 
   /**
    * @return true if there is a specialized operation associated with this handler

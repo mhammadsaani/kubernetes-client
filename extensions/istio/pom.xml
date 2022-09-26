@@ -21,12 +21,16 @@
   <parent>
     <groupId>io.fabric8</groupId>
     <artifactId>kubernetes-extensions</artifactId>
-    <version>6.0-SNAPSHOT</version>
+    <version>6.2-SNAPSHOT</version>
   </parent>
 
   <artifactId>istio-extension-pom</artifactId>
   <packaging>pom</packaging>
   <name>Fabric8 :: Istio :: Extension</name>
+  
+  <properties>
+    <jsonschema2pojo.targetPackage>io.fabric8.istio.api.model</jsonschema2pojo.targetPackage>
+  </properties>
 
   <modules>
     <module>model-v1alpha3</module>

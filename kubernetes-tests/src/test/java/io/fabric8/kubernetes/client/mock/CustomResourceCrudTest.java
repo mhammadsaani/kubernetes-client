@@ -50,10 +50,10 @@ class CustomResourceCrudTest {
   void setUp() {
     KubernetesDeserializer.registerCustomKind("stable.example.com/v1", "CronTab", CronTab.class);
     cronTabCrd = client
-      .apiextensions().v1()
-      .customResourceDefinitions()
-      .load(getClass().getResourceAsStream("/crontab-crd.yml"))
-      .get();
+        .apiextensions().v1()
+        .customResourceDefinitions()
+        .load(getClass().getResourceAsStream("/crontab-crd.yml"))
+        .get();
     client.apiextensions().v1().customResourceDefinitions().create(cronTabCrd);
   }
 
@@ -63,7 +63,8 @@ class CustomResourceCrudTest {
     CronTab cronTab2 = createCronTab("my-second-cron-object", "* * * * */4", 2, "my-second-cron-image");
     CronTab cronTab3 = createCronTab("my-third-cron-object", "* * * * */3", 1, "my-third-cron-image");
 
-    MixedOperation<CronTab, KubernetesResourceList<CronTab>, Resource<CronTab>> cronTabClient = client.customResources(CronTab.class);
+    MixedOperation<CronTab, KubernetesResourceList<CronTab>, Resource<CronTab>> cronTabClient = client
+        .resources(CronTab.class);
 
     cronTabClient.inNamespace("test-ns").create(cronTab1);
     cronTabClient.inNamespace("test-ns").create(cronTab2);
@@ -97,7 +98,7 @@ class CustomResourceCrudTest {
     CronTab cronTab3 = createCronTab("my-third-cron-object", "* * * * */3", 1, "my-third-cron-image");
 
     MixedOperation<CronTab, KubernetesResourceList<CronTab>, Resource<CronTab>> cronTabClient = client
-      .customResources(CronTab.class);
+        .resources(CronTab.class);
 
     cronTabClient.inNamespace("test-ns").create(cronTab1);
     cronTabClient.inNamespace("test-ns").create(cronTab2);
@@ -132,7 +133,7 @@ class CustomResourceCrudTest {
     cronTab.setStatus(status);
 
     NonNamespaceOperation<CronTab, KubernetesResourceList<CronTab>, Resource<CronTab>> cronTabClient = client
-        .customResources(CronTab.class).inNamespace("test-ns");
+        .resources(CronTab.class).inNamespace("test-ns");
 
     CronTab result = cronTabClient.create(cronTab);
 
@@ -143,6 +144,7 @@ class CustomResourceCrudTest {
     labels.put("app", "core");
 
     cronTab.getMetadata().setLabels(labels);
+    cronTab.getMetadata().setResourceVersion("1");
 
     result = cronTabClient.replace(cronTab);
 

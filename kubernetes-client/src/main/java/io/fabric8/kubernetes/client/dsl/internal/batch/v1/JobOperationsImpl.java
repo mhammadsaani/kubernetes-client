@@ -15,21 +15,19 @@
  */
 package io.fabric8.kubernetes.client.dsl.internal.batch.v1;
 
-import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.api.model.autoscaling.v1.Scale;
 import io.fabric8.kubernetes.api.model.batch.v1.Job;
 import io.fabric8.kubernetes.api.model.batch.v1.JobList;
-import io.fabric8.kubernetes.client.ClientContext;
-import io.fabric8.kubernetes.client.KubernetesClientException;
+import io.fabric8.kubernetes.client.Client;
 import io.fabric8.kubernetes.client.dsl.LogWatch;
 import io.fabric8.kubernetes.client.dsl.Loggable;
 import io.fabric8.kubernetes.client.dsl.PodResource;
 import io.fabric8.kubernetes.client.dsl.ScalableResource;
-import io.fabric8.kubernetes.client.dsl.base.HasMetadataOperation;
-import io.fabric8.kubernetes.client.dsl.base.OperationContext;
+import io.fabric8.kubernetes.client.dsl.internal.HasMetadataOperation;
 import io.fabric8.kubernetes.client.dsl.internal.HasMetadataOperationsImpl;
+import io.fabric8.kubernetes.client.dsl.internal.OperationContext;
 import io.fabric8.kubernetes.client.dsl.internal.PodControllerOperationContext;
-import io.fabric8.kubernetes.client.utils.PodOperationUtil;
+import io.fabric8.kubernetes.client.utils.internal.PodOperationUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,44 +43,25 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 public class JobOperationsImpl extends HasMetadataOperation<Job, JobList, ScalableResource<Job>>
-  implements ScalableResource<Job> {
+    implements ScalableResource<Job> {
 
   static final transient Logger LOG = LoggerFactory.getLogger(JobOperationsImpl.class);
   private final PodControllerOperationContext podControllerOperationContext;
 
-  public JobOperationsImpl(ClientContext clientContext) {
-    this(clientContext, null);
-  }
-
-  public JobOperationsImpl(ClientContext clientContext, String namespace) {
-    this(new PodControllerOperationContext(), HasMetadataOperationsImpl.defaultContext(clientContext).withNamespace(namespace));
+  public JobOperationsImpl(Client client) {
+    this(new PodControllerOperationContext(), HasMetadataOperationsImpl.defaultContext(client));
   }
 
   public JobOperationsImpl(PodControllerOperationContext context, OperationContext superContext) {
     super(superContext.withApiGroupName("batch")
-      .withApiGroupVersion("v1")
-      .withPlural("jobs"), Job.class, JobList.class);
+        .withApiGroupVersion("v1")
+        .withPlural("jobs"), Job.class, JobList.class);
     this.podControllerOperationContext = context;
   }
 
   @Override
   public JobOperationsImpl newInstance(OperationContext context) {
     return new JobOperationsImpl(podControllerOperationContext, context);
-  }
-
-  @Override
-  public ScalableResource<Job> load(InputStream is) {
-    try {
-      Job item = unmarshal(is, Job.class);
-      return newInstance(context.withItem(item));
-    } catch (Throwable t) {
-      throw KubernetesClientException.launderThrowable(t);
-    }
-  }
-
-  @Override
-  public ScalableResource<Job> fromServer() {
-    return newInstance(context.withReloadingFromServer(true));
   }
 
   @Override
@@ -137,29 +116,41 @@ public class JobOperationsImpl extends HasMetadataOperation<Job, JobList, Scalab
   }
 
   @Override
-  public String getLog(Boolean isPretty) {
+  public String getLog(boolean isPretty) {
     StringBuilder stringBuilder = new StringBuilder();
-    List<PodResource<Pod>> podOperationList = doGetLog(false);
-    for (PodResource<Pod> podOperation : podOperationList) {
+    List<PodResource> podOperationList = doGetLog(false);
+    for (PodResource podOperation : podOperationList) {
       stringBuilder.append(podOperation.getLog(isPretty));
     }
     return stringBuilder.toString();
   }
 
-  private List<PodResource<Pod>> doGetLog(boolean isPretty) {
+  private List<PodResource> doGetLog(boolean isPretty) {
     Job job = requireFromServer();
 
     return PodOperationUtil.getPodOperationsForController(context, job.getMetadata().getUid(),
-      getJobPodLabels(job), isPretty, podControllerOperationContext.getLogWaitTimeout(), podControllerOperationContext.getContainerId());
+        getJobPodLabels(job), isPretty, podControllerOperationContext.getLogWaitTimeout(),
+        podControllerOperationContext.getContainerId());
   }
 
   /**
    * Returns an unclosed Reader. It's the caller responsibility to close it.
+   *
    * @return Reader
    */
   @Override
   public Reader getLogReader() {
     return PodOperationUtil.getLogReader(doGetLog(false));
+  }
+
+  /**
+   * Returns an unclosed InputStream. It's the caller responsibility to close it.
+   *
+   * @return Reader
+   */
+  @Override
+  public InputStream getLogInputStream() {
+    return PodOperationUtil.getLogInputStream(doGetLog(false));
   }
 
   @Override
@@ -173,10 +164,10 @@ public class JobOperationsImpl extends HasMetadataOperation<Job, JobList, Scalab
   }
 
   @Override
-  public Loggable<LogWatch> withLogWaitTimeout(Integer logWaitTimeout) {
+  public Loggable withLogWaitTimeout(Integer logWaitTimeout) {
     return new JobOperationsImpl(podControllerOperationContext.withLogWaitTimout(logWaitTimeout), context);
   }
-  
+
   @Override
   protected Job modifyItemForReplaceOrPatch(Supplier<Job> current, Job job) {
     Job jobFromServer = current.get();
@@ -200,7 +191,7 @@ public class JobOperationsImpl extends HasMetadataOperation<Job, JobList, Scalab
   }
 
   @Override
-  public Loggable<LogWatch> inContainer(String id) {
+  public Loggable inContainer(String id) {
     return new JobOperationsImpl(podControllerOperationContext.withContainerId(id), context);
   }
 }

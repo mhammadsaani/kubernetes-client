@@ -16,7 +16,6 @@
 package io.fabric8.kubernetes.client.dsl.internal;
 
 import io.fabric8.kubernetes.api.model.HasMetadata;
-import io.fabric8.kubernetes.client.WatcherException;
 import io.fabric8.kubernetes.client.http.WebSocket;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,59 +25,57 @@ import java.nio.charset.StandardCharsets;
 
 class WatcherWebSocketListener<T extends HasMetadata> implements WebSocket.Listener {
   protected static final Logger logger = LoggerFactory.getLogger(WatcherWebSocketListener.class);
-  
-  // don't allow for concurrent failure and message processing
-  // if something is holding the message thread, this can lead to concurrent processing on the watcher
-  // or worse additional reconnection attempts while the previous threads are still held
-  private final Object reconnectLock = new Object();
-  
+
   protected final AbstractWatchManager<T> manager;
-  
+
+  private boolean reconnected = false;
+
   protected WatcherWebSocketListener(AbstractWatchManager<T> manager) {
     this.manager = manager;
   }
-  
+
   @Override
   public void onOpen(final WebSocket webSocket) {
     logger.debug("WebSocket successfully opened");
     manager.resetReconnectAttempts();
   }
-  
-  
+
   @Override
   public void onError(WebSocket webSocket, Throwable t) {
-    if (manager.isForceClosed()) {
-      logger.debug("Ignoring onFailure for already closed/closing websocket", t);
-      return;
-    }
-    
-    if (manager.cannotReconnect()) {
-      manager.close(new WatcherException("Connection failure", t));
-      return;
-    }
-    
-    synchronized (reconnectLock) {
-      manager.scheduleReconnect();
-    }
+    logger.debug("WebSocket error received", t);
+    scheduleReconnect();
   }
-  
+
   @Override
   public void onMessage(WebSocket webSocket, String text) {
-    synchronized (reconnectLock) {
-      manager.onMessage(text);
+    // onMesssage and onClose are serialized, but it's not specified if onError
+    // may occur simultaneous with onMessage.  So we prevent concurrent processing
+    try {
+      synchronized (this) {
+        manager.onMessage(text);
+      }
+    } finally {
+      webSocket.request();
     }
   }
-  
+
   @Override
   public void onMessage(WebSocket webSocket, ByteBuffer bytes) {
     onMessage(webSocket, StandardCharsets.UTF_8.decode(bytes).toString());
   }
-  
+
   @Override
   public void onClose(WebSocket webSocket, int code, String reason) {
     logger.debug("WebSocket close received. code: {}, reason: {}", code, reason);
     webSocket.sendClose(code, reason);
-    manager.scheduleReconnect();
+    scheduleReconnect();
   }
-  
+
+  private synchronized void scheduleReconnect() {
+    if (!reconnected) {
+      manager.scheduleReconnect();
+      reconnected = true;
+    }
+  }
+
 }

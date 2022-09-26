@@ -21,7 +21,7 @@
   <parent>
     <artifactId>kubernetes-client-project</artifactId>
     <groupId>io.fabric8</groupId>
-    <version>6.0-SNAPSHOT</version>
+    <version>6.2-SNAPSHOT</version>
   </parent>
 
   <artifactId>kubernetes-openshift-uberjar</artifactId>
@@ -88,6 +88,10 @@
     </dependency>
     <dependency>
       <groupId>io.fabric8</groupId>
+      <artifactId>kubernetes-model-gatewayapi</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.fabric8</groupId>
       <artifactId>kubernetes-model-networking</artifactId>
     </dependency>
     <dependency>
@@ -145,6 +149,10 @@
     <dependency>
       <groupId>io.fabric8</groupId>
       <artifactId>openshift-model-console</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.fabric8</groupId>
+      <artifactId>openshift-model-config</artifactId>
     </dependency>
     <dependency>
       <groupId>io.fabric8</groupId>
@@ -276,6 +284,7 @@
                   <include>io.fabric8:kubernetes-model-events</include>
                   <include>io.fabric8:kubernetes-model-extensions</include>
                   <include>io.fabric8:kubernetes-model-flowcontrol</include>
+                  <include>io.fabric8:kubernetes-model-gatewayapi</include>
                   <include>io.fabric8:kubernetes-model-networking</include>
                   <include>io.fabric8:kubernetes-model-node</include>
                   <include>io.fabric8:kubernetes-model-metrics</include>
@@ -285,6 +294,7 @@
                   <include>io.fabric8:openshift-model</include>
                   <include>io.fabric8:openshift-model-clusterautoscaling</include>
                   <include>io.fabric8:openshift-model-console</include>
+                  <include>io.fabric8:openshift-model-config</include>
                   <include>io.fabric8:openshift-model-operator</include>
                   <include>io.fabric8:openshift-model-operatorhub</include>
                   <include>io.fabric8:openshift-model-machineconfig</include>
@@ -334,6 +344,7 @@
                   <include>io.fabric8:kubernetes-model-events</include>
                   <include>io.fabric8:kubernetes-model-extensions</include>
                   <include>io.fabric8:kubernetes-model-flowcontrol</include>
+                  <include>io.fabric8:kubernetes-model-gatewayapi</include>
                   <include>io.fabric8:kubernetes-model-networking</include>
                   <include>io.fabric8:kubernetes-model-node</include>
                   <include>io.fabric8:kubernetes-model-metrics</include>
@@ -343,6 +354,7 @@
                   <include>io.fabric8:openshift-model</include>
                   <include>io.fabric8:openshift-model-clusterautoscaling</include>
                   <include>io.fabric8:openshift-model-console</include>
+                  <include>io.fabric8:openshift-model-config</include>
                   <include>io.fabric8:openshift-model-operator</include>
                   <include>io.fabric8:openshift-model-operatorhub</include>
                   <include>io.fabric8:openshift-model-machineconfig</include>

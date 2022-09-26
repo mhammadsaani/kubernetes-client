@@ -15,9 +15,7 @@
  */
 package io.fabric8.java.generator.nodes;
 
-import static io.fabric8.java.generator.nodes.Keywords.ADDITIONAL_PROPERTIES;
-import static io.fabric8.java.generator.nodes.Keywords.JAVA_UTIL_MAP;
-
+import com.fasterxml.jackson.databind.JsonNode;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Modifier;
 import com.github.javaparser.ast.NodeList;
@@ -27,226 +25,277 @@ import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.*;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
+import com.github.javaparser.utils.StringEscapeUtils;
+import io.fabric8.java.generator.Config;
 import io.fabric8.java.generator.exceptions.JavaGeneratorException;
 import io.fabric8.kubernetes.api.model.apiextensions.v1.JSONSchemaProps;
+import io.fabric8.kubernetes.client.utils.Serialization;
+import io.fabric8.kubernetes.client.utils.Utils;
+
 import java.util.*;
 import java.util.stream.Collectors;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-public class JObject extends AbstractJSONSchema2Pojo {
+public class JObject extends AbstractJSONSchema2Pojo implements JObjectExtraAnnotations {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(JObject.class);
-    private static final Set<String> IGNORED_FIELDS = new HashSet<>();
+  private static final Set<String> IGNORED_FIELDS = new HashSet<>();
 
-    static {
-        IGNORED_FIELDS.add("description");
-        IGNORED_FIELDS.add("schema");
-        IGNORED_FIELDS.add("example");
-        IGNORED_FIELDS.add("examples");
+  static {
+    IGNORED_FIELDS.add("description");
+    IGNORED_FIELDS.add("schema");
+    IGNORED_FIELDS.add("example");
+    IGNORED_FIELDS.add("examples");
+  }
+
+  private final String type;
+  private final String className;
+  private final String pkg;
+  private final Map<String, AbstractJSONSchema2Pojo> fields;
+  private final Set<String> required;
+
+  private final boolean preserveUnknownFields;
+
+  public JObject(
+      String pkg,
+      String type,
+      Map<String, JSONSchemaProps> fields,
+      List<String> required,
+      boolean preserveUnknownFields,
+      String classPrefix,
+      String classSuffix,
+      Config config,
+      String description,
+      final boolean isNullable, JsonNode defaultValue) {
+    super(config, description, isNullable, defaultValue, null);
+    this.required = new HashSet<>(Optional.ofNullable(required).orElse(Collections.emptyList()));
+    this.fields = new HashMap<>();
+    this.preserveUnknownFields = preserveUnknownFields;
+
+    this.pkg = (pkg == null) ? "" : pkg.trim();
+    String pkgPrefix = (this.pkg.isEmpty()) ? this.pkg : this.pkg + ".";
+    String clazzPrefix = (classPrefix == null) ? "" : classPrefix.trim();
+    String clazzSuffix = (classSuffix == null
+        || type.toLowerCase(Locale.ROOT)
+            .endsWith(classSuffix.toLowerCase(Locale.ROOT)))
+                ? ""
+                : classSuffix.trim();
+    String upperCasedClassName = type.substring(0, 1).toUpperCase() + type.substring(1);
+    this.className = AbstractJSONSchema2Pojo.sanitizeString(
+        clazzPrefix + upperCasedClassName + clazzSuffix);
+    this.type = pkgPrefix + this.className;
+
+    if (fields == null) {
+      // no fields
+    } else {
+      String nextPackagePath = null;
+      switch (config.getCodeStructure()) {
+        case FLAT:
+          nextPackagePath = this.pkg;
+          break;
+        case PACKAGE_NESTED:
+          nextPackagePath = pkgPrefix + AbstractJSONSchema2Pojo.packageName(this.className);
+          break;
+      }
+
+      for (Map.Entry<String, JSONSchemaProps> field : fields.entrySet()) {
+        if (!IGNORED_FIELDS.contains(field.getKey())) {
+          String nextPrefix = (config.getPrefixStrategy() == Config.Prefix.ALWAYS) ? classPrefix : "";
+          String nextSuffix = (config.getSuffixStrategy() == Config.Suffix.ALWAYS) ? classSuffix : "";
+          this.fields.put(
+              field.getKey(),
+              AbstractJSONSchema2Pojo.fromJsonSchema(
+                  field.getKey(),
+                  field.getValue(),
+                  nextPackagePath,
+                  nextPrefix,
+                  nextSuffix,
+                  config));
+        }
+      }
+    }
+  }
+
+  @Override
+  public String getType() {
+    return this.type;
+  }
+
+  private String getSortedFieldsAsParam(Set<String> list) {
+    List<String> sortedFields = list.stream().sorted().collect(Collectors.toList());
+    StringBuilder sb = new StringBuilder();
+    sb.append("{");
+    while (!sortedFields.isEmpty()) {
+      sb.append("\"" + sortedFields.remove(0) + "\"");
+      if (!sortedFields.isEmpty()) {
+        sb.append(",");
+      }
+    }
+    sb.append("}");
+    return sb.toString();
+  }
+
+  @Override
+  public GeneratorResult generateJava() {
+    CompilationUnit cu = new CompilationUnit();
+    if (!this.pkg.isEmpty()) {
+      cu.setPackageDeclaration(this.pkg);
+    }
+    ClassOrInterfaceDeclaration clz = cu.addClass(this.className);
+
+    clz.addAnnotation(
+        new SingleMemberAnnotationExpr(
+            new Name("com.fasterxml.jackson.annotation.JsonInclude"),
+            new NameExpr(
+                "com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL")));
+
+    clz.addAnnotation(
+        new SingleMemberAnnotationExpr(
+            new Name("com.fasterxml.jackson.annotation.JsonPropertyOrder"),
+            new NameExpr(getSortedFieldsAsParam(this.fields.keySet()))));
+
+    clz.addAnnotation(
+        new SingleMemberAnnotationExpr(
+            new Name("com.fasterxml.jackson.databind.annotation.JsonDeserialize"),
+            new NameExpr(
+                "using = com.fasterxml.jackson.databind.JsonDeserializer.None.class")));
+
+    if (config.isObjectExtraAnnotations()) {
+      addExtraAnnotations(clz);
     }
 
-    private final String type;
-    private final Map<String, AbstractJSONSchema2Pojo> fields;
-    private final Set<String> required;
-    private JObjectOptions options;
+    clz.addImplementedType("io.fabric8.kubernetes.api.model.KubernetesResource");
 
-    public JObject(
-            String type,
-            Map<String, JSONSchemaProps> fields,
-            List<String> required,
-            JObjectOptions options) {
-        this.options = options;
-        this.required =
-                new HashSet<>(Optional.ofNullable(required).orElse(Collections.emptyList()));
-        this.fields = new HashMap<>();
+    List<GeneratorResult.ClassResult> buffer = new ArrayList<>(this.fields.size() + 1);
 
-        String nextPrefix = options.getPrefix();
-        String nextSuffix = options.getSuffix();
+    List<String> sortedKeys = this.fields.keySet().stream().sorted().collect(Collectors.toList());
+    for (String k : sortedKeys) {
+      AbstractJSONSchema2Pojo prop = this.fields.get(k);
+      boolean isRequired = this.required.contains(k);
 
-        if (type.toLowerCase(Locale.ROOT).equals("spec")) {
-            nextPrefix = "";
-            nextSuffix = "Spec";
+      GeneratorResult gr = prop.generateJava();
+
+      // For now the inner types are only for enums
+      if (!gr.getInnerClasses().isEmpty()) {
+        for (GeneratorResult.ClassResult enumCR : gr.getInnerClasses()) {
+          Optional<EnumDeclaration> ed = enumCR.getCompilationUnit().getEnumByName(enumCR.getName());
+          if (ed.isPresent()) {
+            clz.addMember(ed.get());
+          }
+        }
+      }
+      buffer.addAll(gr.getTopLevelClasses());
+
+      String originalFieldName = k;
+      String fieldName = AbstractJSONSchema2Pojo.sanitizeString(k);
+      String fieldType = prop.getType();
+
+      try {
+        FieldDeclaration objField = clz.addField(fieldType, fieldName, Modifier.Keyword.PRIVATE);
+        objField.addAnnotation(
+            new SingleMemberAnnotationExpr(
+                new Name("com.fasterxml.jackson.annotation.JsonProperty"),
+                new StringLiteralExpr(originalFieldName)));
+
+        if (isRequired) {
+          objField.addAnnotation("io.fabric8.generator.annotation.Required");
+        }
+        if (prop.getMaximum() != null) {
+          objField.addAnnotation(
+              new SingleMemberAnnotationExpr(
+                  new Name("io.fabric8.generator.annotation.Max"),
+                  new DoubleLiteralExpr(prop.getMaximum())));
+        }
+        if (prop.getMinimum() != null) {
+          objField.addAnnotation(
+              new SingleMemberAnnotationExpr(
+                  new Name("io.fabric8.generator.annotation.Min"),
+                  new DoubleLiteralExpr(prop.getMinimum())));
+        }
+        if (prop.getPattern() != null) {
+          objField.addAnnotation(
+              new SingleMemberAnnotationExpr(
+                  new Name("io.fabric8.generator.annotation.Pattern"),
+                  new StringLiteralExpr(StringEscapeUtils.escapeJava(prop.getPattern()))));
         }
 
-        this.type =
-                AbstractJSONSchema2Pojo.sanitizeString(
-                        options.getPrefix()
-                                + type.substring(0, 1).toUpperCase()
-                                + type.substring(1)
-                                + options.getSuffix());
+        objField.createGetter();
+        objField.createSetter();
 
-        if (fields == null) {
-            // no fields
+        if (Utils.isNotNullOrEmpty(prop.getDescription())) {
+          objField.setJavadocComment(prop.getDescription());
+
+          objField.addAnnotation(
+              new SingleMemberAnnotationExpr(
+                  new Name(
+                      "com.fasterxml.jackson.annotation.JsonPropertyDescription"),
+                  new StringLiteralExpr(
+                      prop.getDescription().replace("\"", "\\\""))));
+        }
+
+        if (!prop.isNullable) {
+          // from https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#defaulting-and-nullable :
+          // "_null values for fields that either don't specify the nullable flag, or give it a false
+          // value, will be pruned before defaulting happens. If a default is present, it will be applied_"
+          objField.addAnnotation(
+              new SingleMemberAnnotationExpr(
+                  new Name("com.fasterxml.jackson.annotation.JsonSetter"),
+                  new NameExpr("nulls = com.fasterxml.jackson.annotation.Nulls.SKIP")));
         } else {
-            for (Map.Entry<String, JSONSchemaProps> field : fields.entrySet()) {
-                if (!IGNORED_FIELDS.contains(field.getKey()))
-                    this.fields.put(
-                            field.getKey(),
-                            AbstractJSONSchema2Pojo.fromJsonSchema(
-                                    field.getKey(), field.getValue(), nextPrefix, nextSuffix));
-            }
+          // from https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#defaulting-and-nullable :
+          // "... _When nullable is true, null values will be conserved..._"
+          objField.addAnnotation(
+              new SingleMemberAnnotationExpr(
+                  new Name("com.fasterxml.jackson.annotation.JsonSetter"),
+                  new NameExpr("nulls = com.fasterxml.jackson.annotation.Nulls.SET")));
+          objField.addAnnotation("io.fabric8.generator.annotation.Nullable");
         }
+
+        if (prop.getDefaultValue() != null) {
+          objField.getVariable(0).setInitializer(generateDefaultInitializerExpression(prop));
+        }
+      } catch (Exception cause) {
+        throw new JavaGeneratorException(
+            "Error generating field " + fieldName + " with type " + prop.getType(),
+            cause);
+      }
     }
 
-    @Override
-    public String getType() {
-        return this.type;
+    if (this.preserveUnknownFields || config.isAlwaysPreserveUnknownFields()) {
+      ClassOrInterfaceType mapType = new ClassOrInterfaceType()
+          .setName(Keywords.JAVA_UTIL_MAP)
+          .setTypeArguments(
+              new ClassOrInterfaceType().setName("String"),
+              new ClassOrInterfaceType().setName("Object"));
+      FieldDeclaration objField = clz.addField(mapType, Keywords.ADDITIONAL_PROPERTIES, Modifier.Keyword.PRIVATE);
+      objField.setVariables(
+          new NodeList<>(
+              new VariableDeclarator()
+                  .setName(Keywords.ADDITIONAL_PROPERTIES)
+                  .setType(mapType)
+                  .setInitializer("new java.util.HashMap<>()")));
+
+      objField.addAnnotation("com.fasterxml.jackson.annotation.JsonIgnore");
+
+      objField.createGetter().addAnnotation("com.fasterxml.jackson.annotation.JsonAnyGetter");
+      objField.createSetter().addAnnotation("com.fasterxml.jackson.annotation.JsonAnySetter");
     }
 
-    @Override
-    public GeneratorResult generateJava(CompilationUnit cu) {
-        ClassOrInterfaceDeclaration clz = cu.getClassByName(this.type).orElse(null);
+    buffer.add(new GeneratorResult.ClassResult(this.className, cu));
 
-        if (clz != null) {
-            // TODO: investigate a more nested structure for the generated code
-            LOGGER.warn(
-                    "A class named {} has been already processed, if this class have multiple implementations the resulting code might be incorrect",
-                    this.type);
-            return new GeneratorResult();
-        }
+    return new GeneratorResult(buffer);
+  }
 
-        clz = cu.addClass(this.type);
-
-        clz.addAnnotation(
-                new SingleMemberAnnotationExpr(
-                        new Name("com.fasterxml.jackson.annotation.JsonInclude"),
-                        new NameExpr(
-                                "com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL")));
-
-        List<String> sortedFields =
-                this.fields.keySet().stream().sorted().collect(Collectors.toList());
-        StringBuilder sb = new StringBuilder();
-        sb.append("{");
-        while (!sortedFields.isEmpty()) {
-            sb.append("\"" + sortedFields.remove(0) + "\"");
-            if (!sortedFields.isEmpty()) {
-                sb.append(",");
-            }
-        }
-        sb.append("}");
-
-        clz.addAnnotation(
-                new SingleMemberAnnotationExpr(
-                        new Name("com.fasterxml.jackson.annotation.JsonPropertyOrder"),
-                        new NameExpr(sb.toString())));
-
-        clz.addAnnotation(
-                new SingleMemberAnnotationExpr(
-                        new Name("com.fasterxml.jackson.databind.annotation.JsonDeserialize"),
-                        new NameExpr(
-                                "using = com.fasterxml.jackson.databind.JsonDeserializer.None.class")));
-
-        clz.addAnnotation("lombok.ToString");
-        clz.addAnnotation("lombok.EqualsAndHashCode");
-        clz.addAnnotation("lombok.Setter");
-
-        clz.addAnnotation(
-                new SingleMemberAnnotationExpr(
-                        new Name("lombok.experimental.Accessors"),
-                        new NameExpr("prefix = {\n" + "    \"_\",\n" + "    \"\"\n" + "}")));
-
-        clz.addAnnotation(
-                new SingleMemberAnnotationExpr(
-                        new Name("io.sundr.builder.annotations.Buildable"),
-                        new NameExpr(
-                                "editableEnabled = false, validationEnabled = false, generateBuilderPackage = false, builderPackage = \"io.fabric8.kubernetes.api.builder\", refs = {\n"
-                                        + "    @io.sundr.builder.annotations.BuildableReference(io.fabric8.kubernetes.api.model.ObjectMeta.class),\n"
-                                        + "    @io.sundr.builder.annotations.BuildableReference(io.fabric8.kubernetes.api.model.ObjectReference.class),\n"
-                                        + "    @io.sundr.builder.annotations.BuildableReference(io.fabric8.kubernetes.api.model.LabelSelector.class),\n"
-                                        + "    @io.sundr.builder.annotations.BuildableReference(io.fabric8.kubernetes.api.model.Container.class),\n"
-                                        + "    @io.sundr.builder.annotations.BuildableReference(io.fabric8.kubernetes.api.model.EnvVar.class),\n"
-                                        + "    @io.sundr.builder.annotations.BuildableReference(io.fabric8.kubernetes.api.model.ContainerPort.class),\n"
-                                        + "    @io.sundr.builder.annotations.BuildableReference(io.fabric8.kubernetes.api.model.Volume.class),\n"
-                                        + "    @io.sundr.builder.annotations.BuildableReference(io.fabric8.kubernetes.api.model.VolumeMount.class)\n"
-                                        + "}")));
-
-        clz.addImplementedType("io.fabric8.kubernetes.api.model.KubernetesResource");
-
-        if (this.options.isPreserveUnknownFields()) {
-            if (!clz.getFieldByName(ADDITIONAL_PROPERTIES).isPresent()) {
-                ClassOrInterfaceType mapType =
-                        new ClassOrInterfaceType()
-                                .setName(JAVA_UTIL_MAP)
-                                .setTypeArguments(
-                                        new ClassOrInterfaceType().setName("String"),
-                                        new ClassOrInterfaceType().setName("Object"));
-                FieldDeclaration objField =
-                        clz.addField(mapType, ADDITIONAL_PROPERTIES, Modifier.Keyword.PRIVATE);
-                objField.setVariables(
-                        new NodeList<>(
-                                new VariableDeclarator()
-                                        .setName(ADDITIONAL_PROPERTIES)
-                                        .setType(mapType)
-                                        .setInitializer(
-                                                "new java.util.HashMap<String, Object>()")));
-
-                objField.addAnnotation("com.fasterxml.jackson.annotation.JsonIgnore");
-
-                objField.createGetter()
-                        .addAnnotation("com.fasterxml.jackson.annotation.JsonAnyGetter");
-                objField.createSetter()
-                        .addAnnotation("com.fasterxml.jackson.annotation.JsonAnySetter");
-            } else {
-                // Warning ???
-            }
-        }
-
-        List<String> buffer = new ArrayList<>(this.fields.size() + 1);
-
-        // CU to expand inner Enums
-        CompilationUnit supportCU = new CompilationUnit();
-        List<String> sortedKeys =
-                this.fields.keySet().stream().sorted().collect(Collectors.toList());
-        for (String k : sortedKeys) {
-            AbstractJSONSchema2Pojo prop = this.fields.get(k);
-            boolean isRequired = this.required.contains(k);
-
-            GeneratorResult gr = prop.generateJava(supportCU);
-
-            // For now the inner types are only for enums
-            if (!gr.getInnerClasses().isEmpty()) {
-                for (String enumName : gr.getInnerClasses()) {
-                    Optional<EnumDeclaration> ed = supportCU.getEnumByName(enumName);
-                    if (ed.isPresent()) {
-                        clz.addMember(ed.get());
-                    }
-                }
-            }
-
-            gr = prop.generateJava(cu);
-            buffer.addAll(gr.getTopLevelClasses());
-
-            String originalFieldName = k;
-            String fieldName = AbstractJSONSchema2Pojo.sanitizeString(k);
-            String fieldType = AbstractJSONSchema2Pojo.sanitizeString(prop.getType());
-
-            if (!clz.getFieldByName(fieldName).isPresent()) {
-                try {
-                    FieldDeclaration objField =
-                            clz.addField(fieldType, fieldName, Modifier.Keyword.PRIVATE);
-                    objField.addAnnotation(
-                            new SingleMemberAnnotationExpr(
-                                    new Name("com.fasterxml.jackson.annotation.JsonProperty"),
-                                    new StringLiteralExpr(originalFieldName)));
-
-                    if (isRequired) {
-                        objField.addAnnotation("javax.validation.constraints.NotNull");
-                    }
-
-                    objField.createGetter();
-                    objField.createSetter();
-                } catch (Exception cause) {
-                    throw new JavaGeneratorException(
-                            "Error generating field " + fieldName + " with type " + prop.getType(),
-                            cause);
-                }
-            } else {
-                // Warning ???
-            }
-        }
-        buffer.add(this.type);
-
-        return new GeneratorResult(buffer);
-    }
+  /**
+   * This method is responsible for creating an expression that will initialize the default value.
+   *
+   * @return a {@link Expression} instance that contains a call to the
+   *         {@link Serialization#unmarshal(String, Class)} method.
+   */
+  private Expression generateDefaultInitializerExpression(AbstractJSONSchema2Pojo prop) {
+    return new NameExpr(
+        "io.fabric8.kubernetes.client.utils.Serialization.unmarshal("
+            + "\"" + StringEscapeUtils.escapeJava(Serialization.asJson(prop.getDefaultValue())) + "\""
+            + ", "
+            + prop.getClassType() + ".class"
+            + ")");
+  }
 }

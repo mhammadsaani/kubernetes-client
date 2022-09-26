@@ -15,92 +15,70 @@
  */
 package io.fabric8.java.generator;
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-
+import io.fabric8.java.generator.nodes.GeneratorResult;
 import io.fabric8.kubernetes.api.model.apiextensions.v1.CustomResourceDefinition;
 import io.fabric8.kubernetes.client.utils.Serialization;
+import org.approvaltests.Approvals;
+import org.approvaltests.namer.NamedEnvironment;
+import org.approvaltests.namer.NamerFactory;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+
 import java.util.ArrayList;
 import java.util.List;
-import org.approvaltests.Approvals;
-import org.junit.jupiter.api.Test;
+import java.util.stream.Stream;
+
+import static com.google.common.truth.Truth.assertThat;
 
 class ApprovalTest {
 
-    CRGeneratorRunner runner = new CRGeneratorRunner();
+  private static Stream<Arguments> getCRDGenerationInputData() {
+    return Stream.of(
+        Arguments.of("testCrontabCrd", "crontab-crd.yml", "CronTab", "CrontabJavaCr", new Config()),
+        Arguments.of("testCrontabExtraAnnotationsCrd", "crontab-crd.yml", "CronTab", "CrontabJavaExtraAnnotationsCr",
+            new Config(null, null, null, null, Boolean.TRUE, null)),
+        Arguments.of("testKeycloakCrd", "keycloak-crd.yml", "Keycloak", "KeycloakJavaCr", new Config()),
+        Arguments.of("testJokeCrd", "jokerequests-crd.yml", "JokeRequest", "JokeRequestJavaCr", new Config()),
+        Arguments.of("testAkkaMicroservicesCrd", "akka-microservices-crd.yml", "AkkaMicroservice", "AkkaMicroserviceJavaCr",
+            new Config()));
+  }
 
-    CustomResourceDefinition getCRD(String name) {
-        return Serialization.unmarshal(
-                this.getClass().getClassLoader().getResourceAsStream(name),
-                CustomResourceDefinition.class);
+  @ParameterizedTest
+  @MethodSource("getCRDGenerationInputData")
+  void generate_withValidCrd_shouldGeneratePojos(String parameter, String crdYaml, String customResourceName,
+      String approvalLabel, Config config) {
+    try (NamedEnvironment en = NamerFactory.withParameters(parameter)) {
+      // Arrange
+      CRGeneratorRunner runner = new CRGeneratorRunner(config);
+      CustomResourceDefinition crd = getCRD(crdYaml);
+
+      // Act
+      List<WritableCRCompilationUnit> writables = runner.generate(crd, runner.getPackage("test.org"));
+
+      // Assert
+      assertThat(writables).hasSize(1);
+
+      WritableCRCompilationUnit writable = writables.get(0);
+
+      List<String> underTest = new ArrayList<>();
+      List<GeneratorResult.ClassResult> crl = writable.getClassResults();
+      underTest.add(getJavaClass(crl, customResourceName));
+      underTest.add(getJavaClass(crl, customResourceName + "Spec"));
+      underTest.add(getJavaClass(crl, customResourceName + "Status"));
+
+      Approvals.verifyAll(approvalLabel, underTest);
     }
+  }
 
-    @Test
-    void testCrontabCrd() {
-        // Arrange
-        CustomResourceDefinition crd = getCRD("crontab-crd.yml");
+  private CustomResourceDefinition getCRD(String name) {
+    return Serialization.unmarshal(
+        this.getClass().getClassLoader().getResourceAsStream(name),
+        CustomResourceDefinition.class);
+  }
 
-        // Act
-        List<WritableCRCompilationUnit> writables =
-                runner.generate(crd, runner.getPackage("test.org"));
-
-        // Assert
-        assertEquals(1, writables.size());
-        assertThat(writables.size()).isEqualTo(1);
-
-        WritableCRCompilationUnit writable = writables.get(0);
-
-        List<String> underTest = new ArrayList<>();
-        underTest.add(writable.getJavaClass("CronTab"));
-        underTest.add(writable.getJavaClass("CronTabSpec"));
-        underTest.add(writable.getJavaClass("CronTabStatus"));
-
-        Approvals.verifyAll("CrontabJavaCr", underTest);
-    }
-
-    @Test
-    void testKeycloakCrd() {
-        // Arrange
-        CustomResourceDefinition crd = getCRD("keycloak-crd.yml");
-
-        // Act
-        List<WritableCRCompilationUnit> writables =
-                runner.generate(crd, runner.getPackage("test.org"));
-
-        // Assert
-        assertEquals(1, writables.size());
-        assertThat(writables.size()).isEqualTo(1);
-
-        WritableCRCompilationUnit writable = writables.get(0);
-
-        List<String> underTest = new ArrayList<>();
-        underTest.add(writable.getJavaClass("Keycloak"));
-        underTest.add(writable.getJavaClass("KeycloakSpec"));
-        underTest.add(writable.getJavaClass("KeycloakStatus"));
-
-        Approvals.verifyAll("KeycloakJavaCr", underTest);
-    }
-
-    @Test
-    void testJokeCrd() {
-        // Arrange
-        CustomResourceDefinition crd = getCRD("jokerequests-crd.yml");
-
-        // Act
-        List<WritableCRCompilationUnit> writables =
-                runner.generate(crd, runner.getPackage("test.org"));
-
-        // Assert
-        assertEquals(1, writables.size());
-        assertThat(writables.size()).isEqualTo(1);
-
-        WritableCRCompilationUnit writable = writables.get(0);
-
-        List<String> underTest = new ArrayList<>();
-        underTest.add(writable.getJavaClass("JokeRequest"));
-        underTest.add(writable.getJavaClass("JokeRequestSpec"));
-        underTest.add(writable.getJavaClass("JokeRequestStatus"));
-
-        Approvals.verifyAll("JokeRequestJavaCr", underTest);
-    }
+  private String getJavaClass(List<GeneratorResult.ClassResult> classResults, String name) {
+    GeneratorResult.ClassResult cr = classResults.stream().filter(c -> c.getName().equals(name)).findFirst().get();
+    return cr.getCompilationUnit().toString();
+  }
 }

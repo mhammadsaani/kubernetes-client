@@ -17,6 +17,7 @@
 name: Windows Build
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - master
@@ -27,6 +28,9 @@ concurrency:
   group: ci-win-kubernetes-client-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Java ${{ matrix.java }} Maven
@@ -36,11 +40,12 @@ jobs:
         java: [11]
     steps:
       - name: Checkout
-        uses: actions/checkout@v2.4.0
+        uses: actions/checkout@v3
       - name: Setup Java
-        uses: actions/setup-java@v1
+        uses: actions/setup-java@v3
         with:
           java-version: ${{ matrix.java }}
+          distribution: 'temurin'
       - name: Build Project
-        run: mvn clean install
+        run: ./mvnw clean install
 

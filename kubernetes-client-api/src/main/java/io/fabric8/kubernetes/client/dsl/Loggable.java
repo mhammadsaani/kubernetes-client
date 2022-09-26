@@ -16,15 +16,15 @@
 
 package io.fabric8.kubernetes.client.dsl;
 
+import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.PipedOutputStream;
 import java.io.Reader;
 
 /**
  * Loggable interface for all resources which produce logs
- *
- * @param <W> returns a LogWatch for watching logs
  */
-public interface Loggable<W> {
+public interface Loggable {
 
   /**
    * Get logs of a resource
@@ -39,7 +39,7 @@ public interface Loggable<W> {
    * @param isPretty whether we need logs with pretty output or not
    * @return logs as string
    */
-  String getLog(Boolean isPretty);
+  String getLog(boolean isPretty);
 
   /**
    * Get a Reader for reading logs
@@ -49,20 +49,28 @@ public interface Loggable<W> {
   Reader getLogReader();
 
   /**
-   * Watch logs of a resource
+   * Get a InputStream for reading logs
+   *
+   * @return {@link InputStream} log input stream
+   */
+  InputStream getLogInputStream();
+
+  /**
+   * Watch logs of a resource. Use {@link LogWatch#getOutput()} to obtain the stream
    *
    * @return returns a Closeable interface for log watch
    */
-  W watchLog();
+  LogWatch watchLog();
 
   /**
    * Watch logs of resource and put them inside OutputStream inside
-   * <br>if the OutputStream is a PipedOutputStream, it will be closed when the Watch terminates
+   * <br>
+   * Should not be called with a {@link PipedOutputStream} - use {@link #watchLog()} instead
    *
    * @param out {@link OutputStream} for storing logs
    * @return returns a Closeable interface for log watch
    */
-  W watchLog(OutputStream out);
+  LogWatch watchLog(OutputStream out);
 
   /**
    * While waiting for Pod logs, how long shall we wait until a Pod
@@ -71,6 +79,6 @@ public interface Loggable<W> {
    * @param logWaitTimeout timeout in milliseconds
    * @return {@link Loggable} for fetching logs
    */
-  Loggable<W> withLogWaitTimeout(Integer logWaitTimeout);
+  Loggable withLogWaitTimeout(Integer logWaitTimeout);
 
 }

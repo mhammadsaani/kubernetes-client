@@ -1,26 +1,173 @@
 ## CHANGELOG
-### 6.0-SNAPSHOT
+
+### 6.2-SNAPSHOT
 
 #### Bugs
-* Fix #3848: Supports Queue (cluster) API for Volcano extension
-* Fix #3582: SSL truststore can be loaded in FIPS enabled environments
+* Fix #4369: Informers will retry with a backoff on list/watch failure as they did in 5.12 and prior.
+* Fix #4350: SchemaSwap annotation is now repeatable and is applied multiple times if classes are used more than once in the class hierarchy.
+* Fix #3733: The authentication command from the .kube/config won't be discarded if no arguments are specified
 
 #### Improvements
-* Fix #3811: Reintroduce `Replaceable` interface in `NonNamespaceOperation`
-* Remove `setIntVal`, `setStrVal`, `setKind` setters from `IntOrString` class to avoid invalid combinations
+* Fix #4348: Introduce specific annotations for the generators
+* Fix #4365: The Watch retry logic will handle more cases, as well as perform an exceptional close for events that are not properly handled.  Informers can directly provide those exceptional outcomes via the SharedIndexInformer.stopped CompletableFuture.
+* Fix #4396: Provide more error context when @Group/@Version annotations are missing
+* Fix #4384: The Java generator now supports the generation of specific annotations (min, max, pattern, etc.), as defined by #4348
+
+#### Dependency Upgrade
+* Fix #4243: Update Tekton pipeline model to v0.39.0
+* Fix #4243: Update Tekton triggers model to v0.20.2
+* Fix #4383: bump snakeyaml from 1.30 to 1.31
+* Fix #4347: Update Kubernetes Model to v1.25.0
+
+#### New Features
+* Fix #4398: add annotation @PreserveUnknownFields for marking generated field have `x-kubernetes-preserve-unknown-fields: true` defined
+
+#### _**Note**_: Breaking changes in the API
+* Fix #4350: SchemaSwap's fieldName parameter now expects a field name only, not a method or a constructor.
+* Module `io.fabric8:tekton-model-triggers` which contained Tekton triggers v1alpha1 model has been removed. We have introduced separate modules `io.fabric8:tekton-model-v1alpha1` and `io.fabric8:tekton-model-v1beta1` for Tekton triggers v1alpha1 and v1beta1 apigroups respectively. Users who are using `io.fabric8:tekton-client` dependency directly should be unaffected by this change.
+* Fix #4384: javax.validation.* annotations are no longer added by the Java generator.
+
+### 6.1.1 (2022-09-01)
+
+#### Bugs
+fix #4373: NO_PROXY should allow URIs with hyphens ("circleci-internal-outer-build-agent")
+
+### 6.1.0 (2022-08-31)
+
+#### Bugs
+* Fix #4109: Templates with parameters can be retrieved from OpenShift
+* Fix #4206: KubernetesDeserializer can now handle any valid object. If the object lacks type information, it will be deserialized as a GenericKubernetesResource
+* Fix #4247: NO_PROXY with invalid entries throws exception
+* Fix #4256: crd-generator-apt pom.xml includes transitive dependencies
+* Fix #4294: crd-generator respects JsonIgnore annotations on enum properties
+* Fix #4320: corrected leader transitions field on leader election leases
+* Fix #4360: JUnit dependencies aren't leaked in child modules
+
+#### Improvements
+* Fix #887: added KubernetesClient.visitResources to search and perform other operations across all resources.
+* Fix #3960: adding a KubernetesMockServer.expectCustomResource helper method and additional mock crd support
+* Fix #4041: adding Quantity.getNumericalAmount with an explanation about bytes and cores.
+* Fix #4241: added more context to informer logs with the endpoint path
+* Fix #4250: allowing for deserialization of polymorphic unwrapped fields
+* Fix #4254: adding debug logging for exec stream messages
+* Fix #4259: Java Generator's CR should have Lombok's `@EqualsAndHashCode` with `callSuper = true`
+* Fix #4287: added WorkloadGroup for Istio v1alpha3 extension generator
+* Fix #4318: implemented LeaderElection releaseOnCancel
+* Fix #4359: Remove manual model classes with fields name `class`
+
+#### Dependency Upgrade
+* Fix #3967: Update chaos-mesh extension to v2.1.3. Add PodHttpChaos, GCPChaos, BlockChaos and PhysicalMachineChaos.
+* Fix #4352: Update Knative model to v0.34.0
+* Fix #4356: Update Apache CamelK to v1.9.2
+* Fix #4361: Bump Cert-Manager to v1.9.0-beta.1.0.20220829113803-8465f1223efb
+
+#### New Features
+* Fix #2271: Support periodic refresh of access tokens before they expire
+* Fix #4333: Implement "attach to pod" functionality
+
+#### _**Note**_: Breaking changes in the API
+* Fix #4206: The Serialization utility class will throw an Exception, instead of returning null, if an untyped unmarshall method is used on something that lacks type information
+* In ChaosMesh Model, some types have been renamed. These are
+  - `io.fabric8.chaosmesh.v1alpha1.AwsChaos` => `io.fabric8.chaosmesh.v1alpha1.AWSChaos`
+  - `io.fabric8.chaosmesh.v1alpha1.IoChaos` => `io.fabric8.chaosmesh.v1alpha1.IOChaos`
+  - `io.fabric8.chaosmesh.v1alpha1.PodIoChaos` => `io.fabric8.chaosmesh.v1alpha1.PodIOChaos`
+
+### 5.12.3 (2022-07-27)
+
+#### Bugs
+* Fix #3969: relist will not trigger sync events
+* Fix #4049: properly populate exception metadata with resource information if available
+* Fix #4222: backport of #4082 - to not process events until the cache is complete
+* Fix #4246: KubernetesClientException is swallowed in LeaderElector
+* Fix #4295: Configure SnakeYaml to ignore converting timestamps to Date objects
+
+### 6.0.0 (2022-07-13)
+
+#### Bugs
+* Fix #2811: Approve/Reject CSR not supported in v1beta1 CertificateSigningRequest API
+* Fix #4216: Update metadata when `replaceStatus()` is called
+* Fix #4217: patchStatus doesn't increment metadata.generation field in Kubernetes Mock Server (CRUD)
+* Fix #4234: corrected the skip method for base64 inputstream
+
+#### Improvements
+* Fix #3227 : Move `config.openshift.io` apiGroup resources out of `openshift-model/`
+* Fix #4006: Remove outdated shared test classes in `kubernetes-client/` and `openshift-client/` modules
+
+### 6.0.0-RC1 (2022-06-13)
+
+#### Bugs
+* Fix #2860: ensure that lockexceptions won't inhibit notification
+* Fix #3300: addressed race connection with watch reconnects
+* Fix #3745: the client will throw better exceptions when a namespace is not discernible for an operation
+* Fix #3832 #1883: simplifying the isHttpsAvailable check
+* Fix #3990: Throw exception when `HasMetadata` is used in `resources(...)` API
+* Fix #4081: moving Versionable.withResourceVersion to a method on WatchAndWaitable and removing Waitable from the return type
+* Fix #4106: removed listing from projectrequests
+* Fix #4140: changed StatefulSet rolling pause / resume to unsupported.  Also relying on default rolling logic to Deployments and StatefulSets
+* Fix #4139: status changes don't increment metadata.generation field
+* Fix #4149: port forwarding can accept both blocking and non-blocking channels
+* Fix #4171: allowing any object in clone
+
+#### Improvements
+* Fix #1285: removed references to manually calling registerCustomKind
+* Fix #2207: added LeaderElector.start to provide a CompletableFuture for easy cancellation
+* Fix #3334: adding basic support for server side apply.  Use patch(PatchContext.of(PatchType.SERVER_SIDE_APPLY), service), or new PatchContext.Builder()withPatchType(PatchType.SERVER_SIDE_APPLY).withForce(true).build() to override conflicts
+* Fix #3486: using a common jsonschema2pojo annotator - see the migration guide for possible changes to extension models
+* Fix #3625: adds default maps to mostly prevent the need for null checks on things like annotations and labels
+* Fix #3758: VersionInfo in KubernetesMockServer can be overridden
+* Fix #3806: Remove `setIntVal`, `setStrVal`, `setKind` setters from `IntOrString` class to avoid invalid combinations
+* Fix #3852: Deserializing kamelets fails with UnrecognizedPropertyException
+* Fix #3889: remove piped stream for file download
+* Fix #3968: SharedIndexInformer.initialState can be used to set the store state before the informer starts
+  SharedIndexInformer allows for the addition and removal of indexes even after starting, and you can remove the default namespace index if you wish.
+  And Store.getKey can be used rather than directly referencing static Cache functions.
+* Fix #3969: relist will not trigger sync events
+* Fix #4065: Client.getAPIResources("v1") can be used to obtain the core/legacy resources
+* Fix #4082: improving informOnCondition to test the initial list instead of individual add events
+* Fix #4093: adding a possibility to get a log as an `InputStream` from the `Loggable` resources
+* Fix #4142: Added patch() and patch(PatchContext) methods for use with resource and load
+* Fix #4146: ManagedKubernetesClient and ManagedOpenShiftClient as delayed OSGi services
 
 #### Dependency Upgrade
 * Fix #3788: Point CamelK Extension model to latest released version v1.8.0
 * Fix #3813: Handle exit code status messages with pod uploads
+* Fix #3947: Point CamelK Extension model to latest released version v1.8.2
+* Fix #4031: Update Kubernetes Model to v1.24.0
+* Fix #4100: Update Tekton Pipeline Model to v0.35.0
 
 #### New Features
+* Fix #3407 #3973: Added resource(item) to directly associate a resource with the DSL.  It can be used as an alternative to Loadable.load when you already have the item
+  There is also client.resourceList(...).resources() and client.configMaps().resources() - that will provide a Resource stream.
+  This allows you to implement composite operations easily with lambda: client.secrets().resources().forEach(r -> r.delete());
+* Fix #3472 #3587: Allowing for customization of the Informer store/cache key function and how state is stored. See BasicItemStore and ReducedStateItemStore and the SharedIndexInformer.itemStore function
+* Fix #3855: Created a new kubernetes-httpclient-jdk module with an HttpClient implementation based on the Java HttpClient
+* Fix #3922: added Client.supports and Client.hasApiGroup methods
+* Fix #3966: KubernetesMockServer has new methods - unsupported and reset - to control what apis are unsupported and to reset its state
+* Fix #4112: Added TtyExecErrorable.terminateOnError to produce an exceptional outcome to the exitCode when a message is seen on stdErr
+* Fix #3854: Camel-K: Missing method for manipulating KameletBindings
+* Fix #4117: Created new kubernetes-junit-jupiter module, adds a JUnit5 extension for Kubernetes
+* Fix #4180: Created a new kubernetes-httpclient-jetty module with an HttpClient implementation based on Eclipse Jetty
 
 #### _**Note**_: Breaking changes in the API
-* Refactoring #3654: 
-    * Removed deprecated KubernetesClient.customResource / RawCustomResourceOperationsImpl, please use the generic resource api instead 
-    * Removed deprecatedHttpClientUtils.createHttpClient(final Config config, final Consumer<OkHttpClient.Builder> additionalConfig), please use the OkHttpClientFactory instead
-    * Removed deprecated methods on SharedInformerFactory dealing with the OperationContext
-* Refactoring #2838: Readiness/OpenShiftReadiness moved from client.internal.readiness to client.readiness
+Please see the [migration guide](doc/MIGRATION-v6.md)
+
+### 5.12.2 (2022-04-06)
+
+#### Bugs
+* Fix #3582: SSL truststore can be loaded in FIPS enabled environments
+* Fix #3797: Implement SchemaSwap; generate CRD from model not owned
+* Fix #3811: Reintroduce `Replaceable` interface in `NonNamespaceOperation`
+* Fix #3818: adding missing throws to launderThrowable
+* Fix #3848: Supports Queue (cluster) API for Volcano extension
+* Fix #3859: refined how a deserialization class is chosen to not confuse types with the same kind
+* Fix #3880: Synchronize access to map in KubernetesCrudDispatcher
+* Fix #3936: Kubernetes Mock Server .metadata.generation field is an integer
+* Fix #3957: Lister `onOpen` should be called before marking the connection as open
+* Fix #4022: Reintroduce `Deletable` interface in `NonNamespaceOperation`
+* Fix #4009: updating readiness to consider 0 replicas
+
+#### _**Note**_:
+- `Config#autoConfigure(String context)`: Has been changed to only trigger the autoConfigure method once. Previously, providing a wrong context argument would not be a problem since an initial context-less autoConfigure would have already been invoked to provide a valid initial Config.
 
 ### 5.12.1 (2022-02-04)
 
@@ -30,6 +177,9 @@
 * Fix #3796: Limit usage of YAML Serializer
 * Fix #3772: `edit()` should not be allowed as a NonNamespaceOperation
 * Fix #3477: Handle exit code status messages with pod uploads
+
+#### _**Note**_:
+- `Config#autoConfigure(String context)`: Has been changed to only trigger the autoConfigure method once. Previously, providing a wrong context argument would not be a problem since an initial context-less autoConfigure would have already been invoked to provide a valid initial Config.
 
 ### 5.12.0 (2022-01-24)
 

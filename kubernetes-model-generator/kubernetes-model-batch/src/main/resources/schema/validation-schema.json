@@ -401,9 +401,6 @@
           },
           "existingJavaType": "java.util.Map\u003cString, String\u003e"
         },
-        "clusterName": {
-          "type": "string"
-        },
         "creationTimestamp": {
           "$ref": "#/definitions/kubernetes_apimachinery_Time",
           "existingJavaType": "String"
@@ -914,6 +911,9 @@
         },
         "suspend": {
           "type": "boolean"
+        },
+        "timeZone": {
+          "type": "string"
         }
       },
       "additionalProperties": true,
@@ -1065,6 +1065,10 @@
         "parallelism": {
           "type": "integer"
         },
+        "podFailurePolicy": {
+          "$ref": "#/definitions/kubernetes_batch_v1_PodFailurePolicy",
+          "existingJavaType": "io.fabric8.kubernetes.api.model.batch.v1.PodFailurePolicy"
+        },
         "selector": {
           "$ref": "#/definitions/kubernetes_apimachinery_LabelSelector",
           "existingJavaType": "io.fabric8.kubernetes.api.model.LabelSelector"
@@ -1145,6 +1149,85 @@
       },
       "additionalProperties": true,
       "javaType": "io.fabric8.kubernetes.api.model.batch.v1.JobTemplateSpec",
+      "javaInterfaces": [
+        "io.fabric8.kubernetes.api.model.KubernetesResource"
+      ]
+    },
+    "kubernetes_batch_v1_PodFailurePolicy": {
+      "type": "object",
+      "properties": {
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/kubernetes_batch_v1_PodFailurePolicyRule",
+            "existingJavaType": "io.fabric8.kubernetes.api.model.batch.v1.PodFailurePolicyRule"
+          }
+        }
+      },
+      "additionalProperties": true,
+      "javaType": "io.fabric8.kubernetes.api.model.batch.v1.PodFailurePolicy",
+      "javaInterfaces": [
+        "io.fabric8.kubernetes.api.model.KubernetesResource"
+      ]
+    },
+    "kubernetes_batch_v1_PodFailurePolicyOnExitCodesRequirement": {
+      "type": "object",
+      "properties": {
+        "containerName": {
+          "type": "string"
+        },
+        "operator": {
+          "type": "string"
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      },
+      "additionalProperties": true,
+      "javaType": "io.fabric8.kubernetes.api.model.batch.v1.PodFailurePolicyOnExitCodesRequirement",
+      "javaInterfaces": [
+        "io.fabric8.kubernetes.api.model.KubernetesResource"
+      ]
+    },
+    "kubernetes_batch_v1_PodFailurePolicyOnPodConditionsPattern": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true,
+      "javaType": "io.fabric8.kubernetes.api.model.batch.v1.PodFailurePolicyOnPodConditionsPattern",
+      "javaInterfaces": [
+        "io.fabric8.kubernetes.api.model.KubernetesResource"
+      ]
+    },
+    "kubernetes_batch_v1_PodFailurePolicyRule": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "onExitCodes": {
+          "$ref": "#/definitions/kubernetes_batch_v1_PodFailurePolicyOnExitCodesRequirement",
+          "existingJavaType": "io.fabric8.kubernetes.api.model.batch.v1.PodFailurePolicyOnExitCodesRequirement"
+        },
+        "onPodConditions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/kubernetes_batch_v1_PodFailurePolicyOnPodConditionsPattern",
+            "existingJavaType": "io.fabric8.kubernetes.api.model.batch.v1.PodFailurePolicyOnPodConditionsPattern"
+          }
+        }
+      },
+      "additionalProperties": true,
+      "javaType": "io.fabric8.kubernetes.api.model.batch.v1.PodFailurePolicyRule",
       "javaInterfaces": [
         "io.fabric8.kubernetes.api.model.KubernetesResource"
       ]
@@ -1263,6 +1346,9 @@
         },
         "suspend": {
           "type": "boolean"
+        },
+        "timeZone": {
+          "type": "string"
         }
       },
       "additionalProperties": true,
@@ -3027,6 +3113,9 @@
         "hostPID": {
           "type": "boolean"
         },
+        "hostUsers": {
+          "type": "boolean"
+        },
         "hostname": {
           "type": "string"
         },
@@ -3760,8 +3849,24 @@
           "$ref": "#/definitions/kubernetes_apimachinery_LabelSelector",
           "existingJavaType": "io.fabric8.kubernetes.api.model.LabelSelector"
         },
+        "matchLabelKeys": {
+          "type": "array",
+          "javaOmitEmpty": true,
+          "items": {
+            "type": "string"
+          }
+        },
         "maxSkew": {
           "type": "integer"
+        },
+        "minDomains": {
+          "type": "integer"
+        },
+        "nodeAffinityPolicy": {
+          "type": "string"
+        },
+        "nodeTaintsPolicy": {
+          "type": "string"
         },
         "topologyKey": {
           "type": "string"
@@ -4711,7 +4816,7 @@
       "properties": {
         "apiVersion": {
           "type": "string",
-          "default": "batch/v1",
+          "default": "batch/v1beta1",
           "required": true
         },
         "kind": {
@@ -4724,12 +4829,12 @@
           "existingJavaType": "io.fabric8.kubernetes.api.model.ObjectMeta"
         },
         "spec": {
-          "$ref": "#/definitions/kubernetes_batch_v1_CronJobSpec",
-          "existingJavaType": "io.fabric8.kubernetes.api.model.batch.v1.CronJobSpec"
+          "$ref": "#/definitions/kubernetes_batch_v1beta1_CronJobSpec",
+          "existingJavaType": "io.fabric8.kubernetes.api.model.batch.v1beta1.CronJobSpec"
         },
         "status": {
-          "$ref": "#/definitions/kubernetes_batch_v1_CronJobStatus",
-          "existingJavaType": "io.fabric8.kubernetes.api.model.batch.v1.CronJobStatus"
+          "$ref": "#/definitions/kubernetes_batch_v1beta1_CronJobStatus",
+          "existingJavaType": "io.fabric8.kubernetes.api.model.batch.v1beta1.CronJobStatus"
         }
       },
       "additionalProperties": true
@@ -4738,14 +4843,14 @@
       "properties": {
         "apiVersion": {
           "type": "string",
-          "default": "batch/v1beta1",
+          "default": "batch/v1",
           "required": true
         },
         "items": {
           "type": "array",
           "items": {
-            "$ref": "#/definitions/kubernetes_batch_v1beta1_CronJob",
-            "existingJavaType": "io.fabric8.kubernetes.api.model.batch.v1beta1.CronJob"
+            "$ref": "#/definitions/kubernetes_batch_v1_CronJob",
+            "existingJavaType": "io.fabric8.kubernetes.api.model.batch.v1.CronJob"
           }
         },
         "kind": {
@@ -4784,6 +4889,9 @@
         },
         "suspend": {
           "type": "boolean"
+        },
+        "timeZone": {
+          "type": "string"
         }
       },
       "additionalProperties": true
@@ -5634,6 +5742,10 @@
         "parallelism": {
           "type": "integer"
         },
+        "podFailurePolicy": {
+          "$ref": "#/definitions/kubernetes_batch_v1_PodFailurePolicy",
+          "existingJavaType": "io.fabric8.kubernetes.api.model.batch.v1.PodFailurePolicy"
+        },
         "selector": {
           "$ref": "#/definitions/kubernetes_apimachinery_LabelSelector",
           "existingJavaType": "io.fabric8.kubernetes.api.model.LabelSelector"
@@ -6012,9 +6124,6 @@
           },
           "existingJavaType": "java.util.Map\u003cString, String\u003e"
         },
-        "clusterName": {
-          "type": "string"
-        },
         "creationTimestamp": {
           "$ref": "#/definitions/kubernetes_apimachinery_Time",
           "existingJavaType": "String"
@@ -6342,6 +6451,65 @@
       },
       "additionalProperties": true
     },
+    "podfailurepolicy": {
+      "properties": {
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/kubernetes_batch_v1_PodFailurePolicyRule",
+            "existingJavaType": "io.fabric8.kubernetes.api.model.batch.v1.PodFailurePolicyRule"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "podfailurepolicyonexitcodesrequirement": {
+      "properties": {
+        "containerName": {
+          "type": "string"
+        },
+        "operator": {
+          "type": "string"
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "podfailurepolicyonpodconditionspattern": {
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "podfailurepolicyrule": {
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "onExitCodes": {
+          "$ref": "#/definitions/kubernetes_batch_v1_PodFailurePolicyOnExitCodesRequirement",
+          "existingJavaType": "io.fabric8.kubernetes.api.model.batch.v1.PodFailurePolicyOnExitCodesRequirement"
+        },
+        "onPodConditions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/kubernetes_batch_v1_PodFailurePolicyOnPodConditionsPattern",
+            "existingJavaType": "io.fabric8.kubernetes.api.model.batch.v1.PodFailurePolicyOnPodConditionsPattern"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
     "podos": {
       "properties": {
         "name": {
@@ -6462,6 +6630,9 @@
           "type": "boolean"
         },
         "hostPID": {
+          "type": "boolean"
+        },
+        "hostUsers": {
           "type": "boolean"
         },
         "hostname": {
@@ -7200,8 +7371,24 @@
           "$ref": "#/definitions/kubernetes_apimachinery_LabelSelector",
           "existingJavaType": "io.fabric8.kubernetes.api.model.LabelSelector"
         },
+        "matchLabelKeys": {
+          "type": "array",
+          "javaOmitEmpty": true,
+          "items": {
+            "type": "string"
+          }
+        },
         "maxSkew": {
           "type": "integer"
+        },
+        "minDomains": {
+          "type": "integer"
+        },
+        "nodeAffinityPolicy": {
+          "type": "string"
+        },
+        "nodeTaintsPolicy": {
+          "type": "string"
         },
         "topologyKey": {
           "type": "string"

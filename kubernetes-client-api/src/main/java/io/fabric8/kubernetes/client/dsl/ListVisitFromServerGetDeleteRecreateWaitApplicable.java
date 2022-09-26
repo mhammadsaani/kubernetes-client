@@ -16,14 +16,24 @@
 
 package io.fabric8.kubernetes.client.dsl;
 
-import java.util.List;
-
 import io.fabric8.kubernetes.api.builder.Visitable;
 import io.fabric8.kubernetes.client.FromServerGettable;
 
-public interface ListVisitFromServerGetDeleteRecreateWaitApplicable<T> extends Visitable<ListVisitFromServerGetDeleteRecreateWaitApplicable<T>>,
-  FromServerGettable<List<T>>,
-  Waitable<List<T>, T>,
-  ListVisitFromServerWritable<T>,
-  DryRunable<ListVisitFromServerWritable<T>> {
+import java.util.List;
+import java.util.stream.Stream;
+
+public interface ListVisitFromServerGetDeleteRecreateWaitApplicable<T>
+    extends Visitable<ListVisitFromServerGetDeleteRecreateWaitApplicable<T>>,
+    FromServerGettable<List<T>>,
+    Waitable<List<T>, T>,
+    ListVisitFromServerWritable<T>,
+    DryRunable<ListVisitFromServerWritable<T>> {
+
+  /**
+   * Get each item as as a {@link Resource}
+   *
+   * @return the {@link Resource} steam
+   */
+  Stream<? extends Resource<T>> resources();
+
 }

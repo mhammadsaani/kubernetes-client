@@ -16,8 +16,19 @@
 package io.fabric8.kubernetes.client.extended.run;
 
 import io.fabric8.kubernetes.api.model.Pod;
+import io.fabric8.kubernetes.api.model.PodBuilder;
+import io.fabric8.kubernetes.client.KubernetesClient;
+import io.fabric8.kubernetes.client.NamespacedKubernetesClient;
 
-public interface RunOperations {
+public class RunOperations {
+
+  private final KubernetesClient client;
+  private final RunConfigBuilder runConfigBuilder;
+
+  public RunOperations(KubernetesClient client, RunConfigBuilder runConfigBuilder) {
+    this.client = client;
+    this.runConfigBuilder = runConfigBuilder;
+  }
 
   /**
    * Specify namespace for the operation
@@ -25,7 +36,9 @@ public interface RunOperations {
    * @param namespace namespace in which resource needs to be created
    * @return {@link RunOperations} with injected namespace
    */
-  RunOperations inNamespace(String namespace);
+  public RunOperations inNamespace(String namespace) {
+    return new RunOperations(client.adapt(NamespacedKubernetesClient.class).inNamespace(namespace), runConfigBuilder);
+  }
 
   /**
    * Specify image for the Pod
@@ -33,7 +46,9 @@ public interface RunOperations {
    * @param image image as a string
    * @return {@link RunOperations} with image injected into {@link RunConfig}
    */
-  RunOperations withImage(String image);
+  public RunOperations withImage(String image) {
+    return new RunOperations(client, runConfigBuilder.withImage(image));
+  }
 
   /**
    * Specify name for the Pod
@@ -41,21 +56,36 @@ public interface RunOperations {
    * @param name name of the pod to be created
    * @return {@link RunOperations} with name injected into {@link RunConfig}
    */
-  RunOperations withName(String name);
+  public RunOperations withName(String name) {
+    return new RunOperations(client, runConfigBuilder.withName(name));
+  }
 
   /**
    * Specify complex configuration for Pod creating using {@link RunConfig}
    *
-   * @param generatorRunConfig {@link RunConfig} which allows to provide configuring environment variables, labels, resources, ports etc
+   * @param generatorRunConfig {@link RunConfig} which allows to provide configuring environment variables, labels, resources,
+   *        ports etc
    * @return {@link RunOperations} with specified configuration
    */
-  RunOperations withRunConfig(RunConfig generatorRunConfig);
+  public RunOperations withRunConfig(RunConfig generatorRunConfig) {
+    return new RunOperations(client, new RunConfigBuilder(generatorRunConfig));
+  }
 
   /**
    * Apply the {@link RunConfig} onto the cluster and create Pod
    *
    * @return Pod which got created from the operation
    */
-  Pod done();
+  public Pod done() {
+    return client.pods().resource(convertRunConfigIntoPod()).create();
+  }
+
+  Pod convertRunConfigIntoPod() {
+    RunConfig finalGeneratorConfig = runConfigBuilder.build();
+    return new PodBuilder()
+        .withMetadata(RunConfigUtil.getObjectMetadataFromRunConfig(finalGeneratorConfig))
+        .withSpec(RunConfigUtil.getPodSpecFromRunConfig(finalGeneratorConfig))
+        .build();
+  }
 
 }

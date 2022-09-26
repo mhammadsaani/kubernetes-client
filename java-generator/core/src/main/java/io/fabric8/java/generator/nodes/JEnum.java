@@ -15,94 +15,90 @@
  */
 package io.fabric8.java.generator.nodes;
 
-import static io.fabric8.java.generator.nodes.Keywords.JAVA_LANG_STRING;
-
 import com.fasterxml.jackson.databind.JsonNode;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.*;
-import com.github.javaparser.ast.expr.AssignExpr;
-import com.github.javaparser.ast.expr.NameExpr;
+import com.github.javaparser.ast.expr.*;
 import com.github.javaparser.ast.stmt.BlockStmt;
+import io.fabric8.java.generator.Config;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.stream.Collectors;
+
+import static io.fabric8.java.generator.nodes.Keywords.JAVA_LANG_STRING;
 
 public class JEnum extends AbstractJSONSchema2Pojo {
 
-    private static final String VALUE = "value";
+  private static final String VALUE = "value";
 
-    private final String type;
-    // TODO: handle number enum
-    private final List<String> values;
+  private final String type;
+  // TODO: handle number enum
+  private final List<String> values;
 
-    public JEnum(String type, List<JsonNode> values) {
-        this.type =
-                AbstractJSONSchema2Pojo.sanitizeString(
-                        type.substring(0, 1).toUpperCase() + type.substring(1));
-        this.values = values.stream().map(JsonNode::asText).collect(Collectors.toList());
+  public JEnum(String type, List<JsonNode> values, Config config, String description, final boolean isNullable,
+      JsonNode defaultValue) {
+    super(config, description, isNullable, defaultValue, null);
+    this.type = AbstractJSONSchema2Pojo.sanitizeString(
+        type.substring(0, 1).toUpperCase() + type.substring(1));
+    this.values = values.stream().map(JsonNode::asText).collect(Collectors.toList());
+  }
+
+  @Override
+  public String getType() {
+    return this.type;
+  }
+
+  private String sanitizeEnumEntry(final String str) {
+    String ret = str;
+    if (config.isUppercaseEnums()) {
+      ret = ret.toUpperCase(Locale.ROOT);
+    }
+    return ret.replaceAll("[\\s/]", "_");
+  }
+
+  @Override
+  public GeneratorResult generateJava() {
+    CompilationUnit cu = new CompilationUnit();
+    EnumDeclaration en = cu.addEnum(this.type);
+
+    en.addField(JAVA_LANG_STRING, VALUE);
+    ConstructorDeclaration cd = en.addConstructor();
+    cd.addParameter(JAVA_LANG_STRING, VALUE);
+    cd.createBody();
+
+    cd.setBody(
+        new BlockStmt()
+            .addStatement(
+                new AssignExpr(
+                    new NameExpr("this." + VALUE),
+                    new NameExpr(VALUE),
+                    AssignExpr.Operator.ASSIGN)));
+
+    for (String k : this.values) {
+      String constantName;
+      try {
+        // If the value can be parsed as an Integer
+        Integer.valueOf(k);
+        // Prepend
+        constantName = "V_" + sanitizeEnumEntry(sanitizeString(k));
+      } catch (Exception e) {
+        constantName = sanitizeEnumEntry(sanitizeString(k));
+      }
+      EnumConstantDeclaration decl = new EnumConstantDeclaration();
+      decl.addAnnotation(
+          new SingleMemberAnnotationExpr(
+              new Name("com.fasterxml.jackson.annotation.JsonProperty"),
+              new StringLiteralExpr(k)));
+      decl.setName(constantName);
+      decl.addArgument(new StringLiteralExpr(k));
+      en.addEntry(decl);
     }
 
-    @Override
-    public String getType() {
-        return this.type;
-    }
-
-    private String sanitizeEnumEntry(String str) {
-        str = str.replace(" ", "_");
-        str = str.replace("/", "_");
-        return str;
-    }
-
-    @Override
-    public GeneratorResult generateJava(CompilationUnit cu) {
-        EnumDeclaration en = cu.getEnumByName(this.type).orElse(null);
-
-        if (en == null) {
-            en = cu.addEnum(this.type);
-
-            boolean degraded = false;
-            for (String k : this.values) {
-                try {
-                    Integer.valueOf(k);
-                    degraded = true;
-                } catch (Exception e) {
-                    // Ignored
-                }
-            }
-
-            if (!degraded) {
-                for (String k : this.values) {
-                    en.addEnumConstant(sanitizeEnumEntry(sanitizeString(k)));
-                }
-            } else {
-                // TODO: test this properly eventually
-                en.addField(JAVA_LANG_STRING, VALUE);
-                ConstructorDeclaration cd = en.addConstructor();
-                cd.addParameter(JAVA_LANG_STRING, VALUE);
-                cd.createBody();
-
-                cd.setBody(
-                        new BlockStmt()
-                                .addStatement(
-                                        new AssignExpr(
-                                                new NameExpr("this." + VALUE),
-                                                new NameExpr(VALUE),
-                                                AssignExpr.Operator.ASSIGN)));
-
-                for (String k : this.values) {
-                    String constantName = sanitizeEnumEntry(sanitizeString(k));
-                    try {
-                        Integer.valueOf(k);
-                        constantName = "V_" + constantName;
-                    } catch (Exception e) {
-                        // Ignored
-                    }
-                    en.addEnumConstant(constantName + "(\"" + k + "\")");
-                }
-            }
-        }
-
-        return new GeneratorResult(new ArrayList<>(), Collections.singletonList(getType()));
-    }
+    return new GeneratorResult(
+        new ArrayList<>(),
+        Collections.singletonList(new GeneratorResult.ClassResult(this.type, cu)));
+  }
 }

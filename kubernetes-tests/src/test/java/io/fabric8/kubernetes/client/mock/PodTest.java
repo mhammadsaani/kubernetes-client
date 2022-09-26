@@ -40,8 +40,11 @@ import io.fabric8.kubernetes.client.dsl.internal.core.v1.PodOperationsImpl;
 import io.fabric8.kubernetes.client.server.mock.EnableKubernetesMockClient;
 import io.fabric8.kubernetes.client.server.mock.KubernetesMockServer;
 import io.fabric8.kubernetes.client.server.mock.OutputStreamMessage;
+import io.fabric8.kubernetes.client.utils.InputStreamPumper;
 import io.fabric8.kubernetes.client.utils.Utils;
+import io.fabric8.mockwebserver.internal.WebSocketMessage;
 import okio.ByteString;
+import org.awaitility.Awaitility;
 import org.junit.Assert;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -51,6 +54,8 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.PipedInputStream;
+import java.io.PipedOutputStream;
 import java.net.HttpURLConnection;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -62,6 +67,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -88,16 +94,16 @@ class PodTest {
 
   @Test
   void testList() {
-   server.expect().withPath("/api/v1/namespaces/test/pods").andReturn(200, new PodListBuilder().build()).once();
-   server.expect().withPath("/api/v1/namespaces/ns1/pods").andReturn(200, new PodListBuilder()
-      .addNewItem().and()
-      .addNewItem().and().build()).once();
+    server.expect().withPath("/api/v1/namespaces/test/pods").andReturn(200, new PodListBuilder().build()).once();
+    server.expect().withPath("/api/v1/namespaces/ns1/pods").andReturn(200, new PodListBuilder()
+        .addNewItem().and()
+        .addNewItem().and().build()).once();
 
-   server.expect().withPath("/api/v1/pods").andReturn(200, new PodListBuilder()
-      .addNewItem().and()
-      .addNewItem().and()
-      .addNewItem()
-      .and().build()).once();
+    server.expect().withPath("/api/v1/pods").andReturn(200, new PodListBuilder()
+        .addNewItem().and()
+        .addNewItem().and()
+        .addNewItem()
+        .and().build()).once();
 
     PodList podList = client.pods().list();
     assertNotNull(podList);
@@ -114,27 +120,30 @@ class PodTest {
 
   @Test
   void testListWithLabels() {
-   server.expect().withPath("/api/v1/namespaces/test/pods?labelSelector=" + Utils.toUrlEncoded("key1=value1,key2=value2,key3=value3")).andReturn(200, new PodListBuilder().build()).always();
-   server.expect().withPath("/api/v1/namespaces/test/pods?labelSelector=" + Utils.toUrlEncoded("key1=value1,key2=value2")).andReturn(200, new PodListBuilder()
-      .addNewItem().and()
-      .addNewItem().and()
-      .addNewItem().and()
-      .build()).once();
+    server.expect()
+        .withPath("/api/v1/namespaces/test/pods?labelSelector=" + Utils.toUrlEncoded("key1=value1,key2=value2,key3=value3"))
+        .andReturn(200, new PodListBuilder().build()).always();
+    server.expect().withPath("/api/v1/namespaces/test/pods?labelSelector=" + Utils.toUrlEncoded("key1=value1,key2=value2"))
+        .andReturn(200, new PodListBuilder()
+            .addNewItem().and()
+            .addNewItem().and()
+            .addNewItem().and()
+            .build())
+        .once();
 
     PodList podList = client.pods()
-      .withLabel("key1", "value1")
-      .withLabel("key2","value2")
-      .withLabel("key3","value3")
-      .list();
-
+        .withLabel("key1", "value1")
+        .withLabel("key2", "value2")
+        .withLabel("key3", "value3")
+        .list();
 
     assertNotNull(podList);
     assertEquals(0, podList.getItems().size());
 
     podList = client.pods()
-      .withLabel("key1", "value1")
-      .withLabel("key2","value2")
-      .list();
+        .withLabel("key1", "value1")
+        .withLabel("key2", "value2")
+        .list();
 
     assertNotNull(podList);
     assertEquals(3, podList.getItems().size());
@@ -142,22 +151,24 @@ class PodTest {
 
   @Test
   void testListWithFields() {
-   server.expect().withPath("/api/v1/namespaces/test/pods?fieldSelector=" + Utils.toUrlEncoded("key1=value1,key2=value2,key3!=value3,key3!=value4")).andReturn(200, new PodListBuilder()
-      .addNewItem().and()
-      .addNewItem().and()
-      .build()).once();
+    server.expect().withPath(
+        "/api/v1/namespaces/test/pods?fieldSelector=" + Utils.toUrlEncoded("key1=value1,key2=value2,key3!=value3,key3!=value4"))
+        .andReturn(200, new PodListBuilder()
+            .addNewItem().and()
+            .addNewItem().and()
+            .build())
+        .once();
 
     PodList podList = client.pods()
-      .withField("key1", "value1")
-      .withField("key2","value2")
-      .withoutField("key3","value3")
-      .withoutField("key3", "value4")
-      .list();
+        .withField("key1", "value1")
+        .withField("key2", "value2")
+        .withoutField("key3", "value3")
+        .withoutField("key3", "value4")
+        .list();
 
     assertNotNull(podList);
     assertEquals(2, podList.getItems().size());
   }
-
 
   @Test
   void testEditMissing() {
@@ -165,7 +176,7 @@ class PodTest {
     server.expect().withPath("/api/v1/namespaces/test/pods/pod1").andReturn(404, "error message from kubernetes").always();
 
     // When
-    PodResource<Pod> podOp = client.pods().withName("pod1");
+    PodResource podOp = client.pods().withName("pod1");
 
     // Then
     Assertions.assertThrows(KubernetesClientException.class, () -> podOp.edit(p -> p));
@@ -173,17 +184,16 @@ class PodTest {
 
   @Test
   void testDelete() {
-   server.expect().withPath("/api/v1/namespaces/test/pods/pod1").andReturn(200, new PodBuilder().build()).once();
-   server.expect().withPath("/api/v1/namespaces/ns1/pods/pod2").andReturn(200, new PodBuilder().build()).once();
+    server.expect().withPath("/api/v1/namespaces/test/pods/pod1").andReturn(200, new PodBuilder().build()).once();
+    server.expect().withPath("/api/v1/namespaces/ns1/pods/pod2").andReturn(200, new PodBuilder().build()).once();
 
-
-    Boolean deleted = client.pods().withName("pod1").delete();
+    boolean deleted = client.pods().withName("pod1").delete().size() == 1;
     assertTrue(deleted);
 
-    deleted = client.pods().withName("pod2").delete();
+    deleted = client.pods().withName("pod2").delete().size() == 1;
     assertFalse(deleted);
 
-    deleted = client.pods().inNamespace("ns1").withName("pod2").cascading(false).delete();
+    deleted = client.pods().inNamespace("ns1").withName("pod2").cascading(false).delete().size() == 1;
     assertTrue(deleted);
   }
 
@@ -193,13 +203,13 @@ class PodTest {
     Pod pod2 = new PodBuilder().withNewMetadata().withName("pod2").withNamespace("ns1").and().build();
     Pod pod3 = new PodBuilder().withNewMetadata().withName("pod3").withNamespace("any").and().build();
 
-   server.expect().withPath("/api/v1/namespaces/test/pods/pod1").andReturn(200, pod1).once();
-   server.expect().withPath("/api/v1/namespaces/ns1/pods/pod2").andReturn(200, pod2).once();
+    server.expect().withPath("/api/v1/namespaces/test/pods/pod1").andReturn(200, pod1).once();
+    server.expect().withPath("/api/v1/namespaces/ns1/pods/pod2").andReturn(200, pod2).once();
 
     Boolean deleted = client.pods().inAnyNamespace().delete(pod1, pod2);
     assertTrue(deleted);
 
-    deleted = client.pods().inAnyNamespace().delete(pod3);
+    deleted = client.pods().inAnyNamespace().delete(pod3).size() == 1;
     assertFalse(deleted);
   }
 
@@ -209,8 +219,8 @@ class PodTest {
     Pod pod1 = new PodBuilder().withNewMetadata().withName("pod1").withNamespace("test").and().build();
 
     // When + Then
-    NonNamespaceOperation<Pod, PodList, PodResource<Pod>> podOp = client.pods().inNamespace("test1");
-    Assertions.assertThrows(KubernetesClientException.class, () -> podOp.delete(pod1));
+    NonNamespaceOperation<Pod, PodList, PodResource> podOp = client.pods().inNamespace("test1");
+    assertFalse(podOp.delete(pod1).size() == 1);
   }
 
   @Test
@@ -218,7 +228,8 @@ class PodTest {
     Pod pod1 = new PodBuilder().withNewMetadata().withName("pod1").withNamespace("test").and().build();
     server.expect().withPath("/api/v1/namespaces/test/pods/pod1").andReturn(200, pod1).once();
 
-    Boolean deleted = client.pods().inNamespace("test").withName("pod1").withPropagationPolicy(DeletionPropagation.FOREGROUND).delete();
+    Boolean deleted = client.pods().inNamespace("test").withName("pod1").withPropagationPolicy(DeletionPropagation.FOREGROUND)
+        .delete().size() == 1;
     assertTrue(deleted);
   }
 
@@ -226,7 +237,8 @@ class PodTest {
   void testEvict() {
     server.expect().withPath("/api/v1/namespaces/test/pods/pod1/eviction").andReturn(200, new PodBuilder().build()).once();
     server.expect().withPath("/api/v1/namespaces/ns1/pods/pod2/eviction").andReturn(200, new PodBuilder().build()).once();
-    server.expect().withPath("/api/v1/namespaces/ns1/pods/pod3/eviction").andReturn(PodOperationsImpl.HTTP_TOO_MANY_REQUESTS, new PodBuilder().build()).once();
+    server.expect().withPath("/api/v1/namespaces/ns1/pods/pod3/eviction")
+        .andReturn(PodOperationsImpl.HTTP_TOO_MANY_REQUESTS, new PodBuilder().build()).once();
     server.expect().withPath("/api/v1/namespaces/ns1/pods/pod3/eviction").andReturn(200, new PodBuilder().build()).once();
     server.expect().withPath("/api/v1/namespaces/ns1/pods/pod4/eviction").andReturn(500, new PodBuilder().build()).once();
 
@@ -234,8 +246,8 @@ class PodTest {
     assertTrue(deleted);
 
     // not found
-    deleted = client.pods().withName("pod2").evict();
-    assertFalse(deleted);
+    PodResource podResource = client.pods().withName("pod2");
+    assertThrows(KubernetesClientException.class, () -> podResource.evict());
 
     deleted = client.pods().inNamespace("ns1").withName("pod2").evict();
     assertTrue(deleted);
@@ -248,7 +260,7 @@ class PodTest {
     assertTrue(deleted);
 
     // unhandled error
-    PodResource<Pod> resource = client.pods().inNamespace("ns1").withName("pod4");
+    PodResource resource = client.pods().inNamespace("ns1").withName("pod4");
     assertThrows(KubernetesClientException.class, resource::evict);
   }
 
@@ -256,9 +268,9 @@ class PodTest {
   void testEvictWithPolicyV1Eviction() {
     // Given
     server.expect().post()
-      .withPath("/api/v1/namespaces/ns1/pods/foo/eviction")
-      .andReturn(HttpURLConnection.HTTP_OK, new PodBuilder().build())
-      .once();
+        .withPath("/api/v1/namespaces/ns1/pods/foo/eviction")
+        .andReturn(HttpURLConnection.HTTP_OK, new PodBuilder().build())
+        .once();
 
     // When
     boolean evicted = client.pods().inNamespace("ns1").withName("foo").evict(new EvictionBuilder()
@@ -267,7 +279,7 @@ class PodTest {
         .withNamespace("ns1")
         .endMetadata()
         .withDeleteOptions(new DeleteOptionsBuilder().build())
-      .build());
+        .build());
 
     // Then
     assertTrue(evicted);
@@ -277,7 +289,7 @@ class PodTest {
   void testCreateWithNameMismatch() {
     Pod pod1 = new PodBuilder().withNewMetadata().withName("pod1").withNamespace("test").and().build();
 
-    PodResource<Pod> podOp = client.pods().inNamespace("test1").withName("mypod1");
+    PodResource podOp = client.pods().inNamespace("test1").withName("mypod1");
     Assertions.assertThrows(KubernetesClientException.class, () -> podOp.create(pod1));
   }
 
@@ -288,12 +300,16 @@ class PodTest {
     String pod3Log = "pod3Log";
     String pod4Log = "pod4Log";
 
-   server.expect().withPath("/api/v1/namespaces/test/pods/pod1/log?pretty=true").andReturn(200, pod1Log).once();
-   server.expect().withPath("/api/v1/namespaces/test/pods/pod2/log?pretty=false").andReturn(200, pod2Log).once();
-   server.expect().withPath("/api/v1/namespaces/test/pods/pod3/log?pretty=false&container=cnt3").andReturn(200, pod3Log).once();
-   server.expect().withPath("/api/v1/namespaces/test4/pods/pod4/log?pretty=true&container=cnt4").andReturn(200, pod4Log).once();
-   server.expect().withPath("/api/v1/namespaces/test4/pods/pod1/log?pretty=false&limitBytes=100").andReturn(200, pod1Log).once();
-   server.expect().withPath("/api/v1/namespaces/test5/pods/pod1/log?pretty=false&tailLines=1&timestamps=true").andReturn(200, pod1Log).once();
+    server.expect().withPath("/api/v1/namespaces/test/pods/pod1/log?pretty=true").andReturn(200, pod1Log).once();
+    server.expect().withPath("/api/v1/namespaces/test/pods/pod2/log?pretty=false").andReturn(200, pod2Log).once();
+    server.expect().withPath("/api/v1/namespaces/test/pods/pod3/log?pretty=false&container=cnt3").andReturn(200, pod3Log)
+        .once();
+    server.expect().withPath("/api/v1/namespaces/test4/pods/pod4/log?pretty=true&container=cnt4").andReturn(200, pod4Log)
+        .once();
+    server.expect().withPath("/api/v1/namespaces/test4/pods/pod1/log?pretty=false&limitBytes=100").andReturn(200, pod1Log)
+        .once();
+    server.expect().withPath("/api/v1/namespaces/test5/pods/pod1/log?pretty=false&tailLines=1&timestamps=true")
+        .andReturn(200, pod1Log).once();
 
     String log = client.pods().withName("pod1").getLog(true);
     assertEquals(pod1Log, log);
@@ -318,25 +334,17 @@ class PodTest {
   void testExec() throws InterruptedException {
     String expectedOutput = "file1 file2";
     server.expect().withPath("/api/v1/namespaces/test/pods/pod1/exec?command=ls&stdout=true")
-            .andUpgradeToWebSocket()
-                .open(new OutputStreamMessage(expectedOutput))
-                .done()
-            .always();
+        .andUpgradeToWebSocket()
+        .open(new OutputStreamMessage(expectedOutput))
+        .done()
+        .always();
 
     final CountDownLatch execLatch = new CountDownLatch(1);
     ByteArrayOutputStream baos = new ByteArrayOutputStream();
-    ExecWatch watch = client.pods().withName("pod1").writingOutput(baos).usingListener(new ExecListener() {
-
-      @Override
-      public void onFailure(Throwable t, Response failureResponse) {
-        execLatch.countDown();
-      }
-
-      @Override
-      public void onClose(int code, String reason) {
-        execLatch.countDown();
-      }
-    }).exec("ls");
+    ExecWatch watch = client.pods().withName("pod1")
+        .writingOutput(baos)
+        .usingListener(createCountDownLatchListener(execLatch))
+        .exec("ls");
 
     execLatch.await(10, TimeUnit.MINUTES);
     assertNotNull(watch);
@@ -344,30 +352,149 @@ class PodTest {
     watch.close();
   }
 
+  @Test
+  void testAttachWithWritingOutput() throws InterruptedException, IOException {
+    // Given
+    String validInput = "input";
+    String expectedOutput = "output";
+
+    String invalidInput = "invalid";
+    String expectedError = "error";
+
+    String shutdownInput = "shutdown";
+
+    server.expect().withPath("/api/v1/namespaces/test/pods/pod1/attach?stdin=true&stdout=true&stderr=true")
+        .andUpgradeToWebSocket()
+        .open()
+        .expect("\u0000" + validInput) // \u0000 is the file descriptor for stdin
+        .andEmit(new WebSocketMessage(0L, "\u0001" + expectedOutput, false, true)) // \u0001 is the file descriptor for stdout
+        .always()
+        .expect("\u0000" + invalidInput)
+        .andEmit(new WebSocketMessage(0L, "\u0002" + expectedError, false, true)) // \u0002 is the file descriptor for stderr
+        .always()
+        .expect("\u0000" + shutdownInput)
+        .andEmit(new WebSocketMessage(0L, "\u0003shutdown", false, true))
+        .always()
+        .done()
+        .always();
+
+    ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+    ByteArrayOutputStream stderr = new ByteArrayOutputStream();
+
+    CountDownLatch latch = new CountDownLatch(1);
+
+    // When
+    ExecWatch watch = client.pods().withName("pod1")
+        .redirectingInput()
+
+        .writingOutput(stdout)
+        .writingError(stderr)
+        .usingListener(createCountDownLatchListener(latch))
+        .attach();
+
+    watch.getInput().write(validInput.getBytes(StandardCharsets.UTF_8));
+    watch.getInput().flush();
+    watch.getInput().write(invalidInput.getBytes(StandardCharsets.UTF_8));
+    watch.getInput().flush();
+    watch.getInput().write(shutdownInput.getBytes(StandardCharsets.UTF_8));
+    watch.getInput().flush();
+
+    latch.await(1, TimeUnit.MINUTES);
+
+    // Then
+    assertEquals(expectedOutput, stdout.toString());
+    assertEquals(expectedError, stderr.toString());
+
+    watch.close();
+  }
+
+  @Test
+  void testAttachWithRedirectOutput() throws InterruptedException, IOException {
+    // Given
+    String validInput = "input";
+    String expectedOutput = "output";
+
+    String invalidInput = "invalid";
+    String expectedError = "error";
+
+    server.expect().withPath("/api/v1/namespaces/test/pods/pod1/attach?stdin=true&stdout=true&stderr=true")
+        .andUpgradeToWebSocket()
+        .open()
+        .expect("\u0000" + validInput) // \u0000 is the file descriptor for stdin
+        .andEmit(new WebSocketMessage(0L, "\u0001" + expectedOutput, false, true)) // \u0001 is the file descriptor for stdout
+        .always()
+        .expect("\u0000" + invalidInput)
+        .andEmit(new WebSocketMessage(0L, "\u0002" + expectedError, false, true)) // \u0002 is the file descriptor for stderr
+        .always()
+        .done()
+        .always();
+
+    ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+    ByteArrayOutputStream stderr = new ByteArrayOutputStream();
+
+    CountDownLatch latch = new CountDownLatch(1);
+
+    // When
+    ExecWatch watch = client.pods().withName("pod1")
+        .redirectingInput()
+        .redirectingOutput()
+        .redirectingError()
+        .usingListener(createCountDownLatchListener(latch))
+        .attach();
+
+    watch.getInput().write(validInput.getBytes(StandardCharsets.UTF_8));
+    watch.getInput().flush();
+    watch.getInput().write(invalidInput.getBytes(StandardCharsets.UTF_8));
+    watch.getInput().flush();
+
+    InputStreamPumper.pump(watch.getOutput(), stdout::write, Executors.newSingleThreadExecutor());
+    InputStreamPumper.pump(watch.getError(), stderr::write, Executors.newSingleThreadExecutor());
+
+    // Then
+    Awaitility.await().atMost(30, TimeUnit.SECONDS)
+        .until(() -> stdout.toString().equals(expectedOutput) && stderr.toString().equals(expectedError));
+
+    watch.close();
+    latch.await(1, TimeUnit.MINUTES);
+  }
+
+  private ExecListener createCountDownLatchListener(CountDownLatch latch) {
+    return new ExecListener() {
+      @Override
+      public void onFailure(Throwable t, Response failureResponse) {
+        latch.countDown();
+      }
+
+      @Override
+      public void onClose(int code, String reason) {
+        latch.countDown();
+      }
+    };
+  }
 
   @Test
   void testWatch() throws InterruptedException {
     // Given
     //We start with a list
     Pod pod1 = new PodBuilder()
-      .withNewMetadata()
-      .withName("pod1")
-      .withResourceVersion("1")
-      .endMetadata()
-      .build();
+        .withNewMetadata()
+        .withName("pod1")
+        .withResourceVersion("1")
+        .endMetadata()
+        .build();
     server.expect().withPath("/api/v1/namespaces/test/pods").andReturn(200, new PodListBuilder()
-      .withNewMetadata()
-      .withResourceVersion("1")
-      .endMetadata()
-      .addToItems(pod1)
-      .build()
-    ).once();
-    server.expect().withPath("/api/v1/namespaces/test/pods?fieldSelector=metadata.name%3Dpod1&allowWatchBookmarks=true&watch=true")
-      .andUpgradeToWebSocket()
-      .open()
-      .waitFor(50).andEmit(new WatchEvent(pod1, "DELETED"))
-      .done()
-      .always();
+        .withNewMetadata()
+        .withResourceVersion("1")
+        .endMetadata()
+        .addToItems(pod1)
+        .build()).once();
+    server.expect()
+        .withPath("/api/v1/namespaces/test/pods?fieldSelector=metadata.name%3Dpod1&allowWatchBookmarks=true&watch=true")
+        .andUpgradeToWebSocket()
+        .open()
+        .waitFor(50).andEmit(new WatchEvent(pod1, "DELETED"))
+        .done()
+        .always();
     final CountDownLatch deleteLatch = new CountDownLatch(1);
     final Watcher<Pod> watcher = new Watcher<Pod>() {
       @Override
@@ -389,11 +516,10 @@ class PodTest {
     watch.close();
   }
 
-
   @Test
   void testGetLogNotFound() {
     // Given
-    PodResource<Pod> podOp = client.pods().withName("pod5");
+    PodResource podOp = client.pods().withName("pod5");
 
     // When + Then
     Assertions.assertThrows(KubernetesClientException.class, () -> podOp.getLog(true));
@@ -408,39 +534,41 @@ class PodTest {
   @Test
   void testWait() throws InterruptedException {
     Pod notReady = new PodBuilder()
-      .withNewMetadata()
-      .withName("pod1")
-      .withResourceVersion("1")
-      .withNamespace("test")
-      .endMetadata()
-      .withNewStatus()
-      .addNewCondition()
-      .withType("Ready")
-      .withStatus("False")
-      .endCondition()
-      .endStatus()
-      .build();
-
+        .withNewMetadata()
+        .withName("pod1")
+        .withResourceVersion("1")
+        .withNamespace("test")
+        .endMetadata()
+        .withNewStatus()
+        .addNewCondition()
+        .withType("Ready")
+        .withStatus("False")
+        .endCondition()
+        .endStatus()
+        .build();
 
     Pod ready = new PodBuilder(notReady)
-      .editMetadata()
-      .withResourceVersion("2")
-      .endMetadata()
-      .withNewStatus()
-      .addNewCondition()
-      .withType("Ready")
-      .withStatus("True")
-      .endCondition()
-      .endStatus()
-      .build();
+        .editMetadata()
+        .withResourceVersion("2")
+        .endMetadata()
+        .withNewStatus()
+        .addNewCondition()
+        .withType("Ready")
+        .withStatus("True")
+        .endCondition()
+        .endStatus()
+        .build();
 
-    server.expect().get().withPath("/api/v1/namespaces/test/pods?fieldSelector=metadata.name%3Dpod1").andReturn(200, notReady).once();
+    server.expect().get().withPath("/api/v1/namespaces/test/pods?fieldSelector=metadata.name%3Dpod1").andReturn(200, notReady)
+        .once();
 
-    server.expect().get().withPath("/api/v1/namespaces/test/pods?fieldSelector=metadata.name%3Dpod1&resourceVersion=1&allowWatchBookmarks=true&watch=true").andUpgradeToWebSocket()
-      .open()
-      .waitFor(50).andEmit(new WatchEvent(ready, "MODIFIED"))
-      .done()
-      .always();
+    server.expect().get().withPath(
+        "/api/v1/namespaces/test/pods?fieldSelector=metadata.name%3Dpod1&resourceVersion=1&allowWatchBookmarks=true&watch=true")
+        .andUpgradeToWebSocket()
+        .open()
+        .waitFor(50).andEmit(new WatchEvent(ready, "MODIFIED"))
+        .done()
+        .always();
 
     Pod result = client.pods().withName("pod1").waitUntilReady(5, TimeUnit.SECONDS);
     Assert.assertEquals("2", result.getMetadata().getResourceVersion());
@@ -449,19 +577,18 @@ class PodTest {
   @Test
   void testPortForward() throws IOException {
     server.expect().withPath("/api/v1/namespaces/test/pods/pod1/portforward?ports=123")
-      .andUpgradeToWebSocket()
-      .open()
-      .waitFor(10).andEmit(portForwardEncode(true, "12")) // data channel info
-      .waitFor(10).andEmit(portForwardEncode(false, "12")) // error channel info
-      .waitFor(10).andEmit(portForwardEncode(true, "Hell"))
-      .waitFor(10).andEmit(portForwardEncode(true, "o World"))
-      .done()
-      .once();
+        .andUpgradeToWebSocket()
+        .open()
+        .waitFor(10).andEmit(portForwardEncode(true, "12")) // data channel info
+        .waitFor(10).andEmit(portForwardEncode(false, "12")) // error channel info
+        .waitFor(10).andEmit(portForwardEncode(true, "Hell"))
+        .waitFor(10).andEmit(portForwardEncode(true, "o World"))
+        .done()
+        .once();
 
-    try(
-      LocalPortForward portForward = client.pods().withName("pod1").portForward(123);
-      SocketChannel channel = SocketChannel.open()
-    ) {
+    try (
+        LocalPortForward portForward = client.pods().withName("pod1").portForward(123);
+        SocketChannel channel = SocketChannel.open()) {
       int localPort = portForward.getLocalPort();
       assertTrue(channel.connect(new InetSocketAddress("localhost", localPort)));
 
@@ -479,7 +606,7 @@ class PodTest {
           }
           read = -1;
         }
-      } while(read >= 0);
+      } while (read >= 0);
       buffer.flip();
       channel.socket().close();
       assertEquals("Hello World", ByteString.of(buffer).utf8());
@@ -493,14 +620,14 @@ class PodTest {
   void testPortForwardWithChannel() throws InterruptedException, IOException {
 
     server.expect().withPath("/api/v1/namespaces/test/pods/pod1/portforward?ports=123")
-      .andUpgradeToWebSocket()
-      .open()
-      .waitFor(10).andEmit(portForwardEncode(true, "12")) // data channel info
-      .waitFor(10).andEmit(portForwardEncode(false, "12")) // error channel info
-      .waitFor(10).andEmit(portForwardEncode(true, "Hell"))
-      .waitFor(10).andEmit(portForwardEncode(true, "o World!"))
-      .done()
-      .once();
+        .andUpgradeToWebSocket()
+        .open()
+        .waitFor(10).andEmit(portForwardEncode(true, "12")) // data channel info
+        .waitFor(10).andEmit(portForwardEncode(false, "12")) // error channel info
+        .waitFor(10).andEmit(portForwardEncode(true, "Hell"))
+        .waitFor(10).andEmit(portForwardEncode(true, "o World!"))
+        .done()
+        .once();
 
     ByteArrayInputStream in = new ByteArrayInputStream(new byte[0]);
     ReadableByteChannel inChannel = Channels.newChannel(in);
@@ -508,8 +635,8 @@ class PodTest {
     ByteArrayOutputStream out = new ByteArrayOutputStream();
     WritableByteChannel outChannel = Channels.newChannel(out);
 
-    try(PortForward portForward = client.pods().withName("pod1").portForward(123, inChannel, outChannel)) {
-      while(portForward.isAlive()) {
+    try (PortForward portForward = client.pods().withName("pod1").portForward(123, inChannel, outChannel)) {
+      while (portForward.isAlive()) {
         Thread.sleep(100);
       }
     }
@@ -540,29 +667,57 @@ class PodTest {
   }
 
   @Test
+  void testPipesNotAllowed() {
+    PipedInputStream in = new PipedInputStream();
+    PipedOutputStream out = new PipedOutputStream();
+
+    PodResource podOp = client.pods().inNamespace("ns1").withName("pod2");
+
+    Assertions.assertThrows(KubernetesClientException.class, () -> {
+      podOp.watchLog(out);
+    });
+
+    Assertions.assertThrows(KubernetesClientException.class, () -> {
+      podOp.writingError(out);
+    });
+
+    Assertions.assertThrows(KubernetesClientException.class, () -> {
+      podOp.writingErrorChannel(out);
+    });
+
+    Assertions.assertThrows(KubernetesClientException.class, () -> {
+      podOp.writingOutput(out);
+    });
+
+    Assertions.assertThrows(KubernetesClientException.class, () -> {
+      podOp.readingInput(in);
+    });
+  }
+
+  @Test
   void testListFromServer() {
     PodBuilder podBuilder = new PodBuilder()
-      .withNewMetadata()
+        .withNewMetadata()
         .withNamespace("test")
         .withName("pod1")
-      .endMetadata();
+        .endMetadata();
 
     Pod clientPod = podBuilder.build();
     Pod serverPod = podBuilder
-      .editMetadata()
+        .editMetadata()
         .withResourceVersion("1")
-      .endMetadata()
-      .withNewStatus()
+        .endMetadata()
+        .withNewStatus()
         .addNewCondition()
-          .withType("Ready")
-          .withStatus("True")
+        .withType("Ready")
+        .withStatus("True")
         .endCondition()
-      .endStatus()
-      .build();
+        .endStatus()
+        .build();
 
     server.expect().get()
-      .withPath("/api/v1/namespaces/test/pods/pod1")
-      .andReturn(200, serverPod).once();
+        .withPath("/api/v1/namespaces/test/pods/pod1")
+        .andReturn(200, serverPod).once();
 
     List<HasMetadata> resources = client.resourceList(clientPod).fromServer().get();
 

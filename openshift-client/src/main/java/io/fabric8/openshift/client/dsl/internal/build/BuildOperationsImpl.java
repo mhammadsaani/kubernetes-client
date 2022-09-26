@@ -15,8 +15,7 @@
  */
 package io.fabric8.openshift.client.dsl.internal.build;
 
-import io.fabric8.kubernetes.api.builder.VisitableBuilder;
-import io.fabric8.kubernetes.api.model.Pod;
+import io.fabric8.kubernetes.client.Client;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.dsl.BytesLimitTerminateTimeTailPrettyLoggable;
 import io.fabric8.kubernetes.client.dsl.LogWatch;
@@ -25,22 +24,19 @@ import io.fabric8.kubernetes.client.dsl.PodResource;
 import io.fabric8.kubernetes.client.dsl.PrettyLoggable;
 import io.fabric8.kubernetes.client.dsl.TailPrettyLoggable;
 import io.fabric8.kubernetes.client.dsl.TimeTailPrettyLoggable;
-import io.fabric8.kubernetes.client.dsl.base.OperationContext;
+import io.fabric8.kubernetes.client.dsl.internal.HasMetadataOperation;
 import io.fabric8.kubernetes.client.dsl.internal.HasMetadataOperationsImpl;
 import io.fabric8.kubernetes.client.dsl.internal.LogWatchCallback;
-import io.fabric8.kubernetes.client.internal.PatchUtils;
-import io.fabric8.kubernetes.client.utils.PodOperationUtil;
+import io.fabric8.kubernetes.client.dsl.internal.OperationContext;
 import io.fabric8.kubernetes.client.utils.URLUtils;
+import io.fabric8.kubernetes.client.utils.internal.PodOperationUtil;
 import io.fabric8.openshift.api.model.Build;
-import io.fabric8.openshift.api.model.BuildBuilder;
 import io.fabric8.openshift.api.model.BuildList;
-import io.fabric8.openshift.client.OpenshiftClientContext;
 import io.fabric8.openshift.client.dsl.BuildResource;
 import io.fabric8.openshift.client.dsl.internal.BuildOperationContext;
-import io.fabric8.openshift.client.dsl.internal.OpenShiftOperation;
-import io.fabric8.openshift.client.internal.patchmixins.BuildMixIn;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.Reader;
 import java.net.URL;
@@ -50,9 +46,8 @@ import java.util.Map;
 
 import static io.fabric8.openshift.client.OpenShiftAPIGroups.BUILD;
 
-public class BuildOperationsImpl extends OpenShiftOperation<Build, BuildList,
-  BuildResource<Build, LogWatch>> implements
-  BuildResource<Build, LogWatch> {
+public class BuildOperationsImpl extends HasMetadataOperation<Build, BuildList, BuildResource> implements
+    BuildResource {
 
   public static final String OPENSHIFT_IO_BUILD_NAME = "openshift.io/build.name";
   private final boolean withTerminatedStatus;
@@ -67,13 +62,13 @@ public class BuildOperationsImpl extends OpenShiftOperation<Build, BuildList,
   private Integer podLogWaitTimeout;
   private final BuildOperationContext buildOperationContext;
 
-  public BuildOperationsImpl(OpenshiftClientContext clientContext) {
-    this(new BuildOperationContext(), HasMetadataOperationsImpl.defaultContext(clientContext));
+  public BuildOperationsImpl(Client client) {
+    this(new BuildOperationContext(), HasMetadataOperationsImpl.defaultContext(client));
   }
 
   public BuildOperationsImpl(BuildOperationContext context, OperationContext superContext) {
     super(superContext.withApiGroupName(BUILD)
-      .withPlural("builds"), Build.class, BuildList.class);
+        .withPlural("builds"), Build.class, BuildList.class);
     this.buildOperationContext = context;
     this.withTerminatedStatus = context.isTerminatedStatus();
     this.withTimestamps = context.isTimestamps();
@@ -83,7 +78,6 @@ public class BuildOperationsImpl extends OpenShiftOperation<Build, BuildList,
     this.withPrettyOutput = context.isPrettyOutput();
     this.version = context.getVersion();
     this.limitBytes = context.getLimitBytes();
-    PatchUtils.addMixInToMapper(Build.class, BuildMixIn.class);
   }
 
   @Override
@@ -121,7 +115,7 @@ public class BuildOperationsImpl extends OpenShiftOperation<Build, BuildList,
     return sb.toString();
   }
 
-  protected <T> T doGetLog(Class<T> type){
+  protected <T> T doGetLog(Class<T> type) {
     try {
       URL url = new URL(URLUtils.join(getResourceUrl().toString(), getLogParameters()));
       return handleRawGet(url, type);
@@ -136,17 +130,28 @@ public class BuildOperationsImpl extends OpenShiftOperation<Build, BuildList,
   }
 
   @Override
-  public String getLog(Boolean isPretty) {
+  public String getLog(boolean isPretty) {
     return new BuildOperationsImpl(getContext().withPrettyOutput(isPretty), context).getLog();
   }
 
   /**
    * Returns an unclosed Reader. It's the caller responsibility to close it.
+   *
    * @return Reader
    */
   @Override
-  public Reader getLogReader(){
+  public Reader getLogReader() {
     return doGetLog(Reader.class);
+  }
+
+  /**
+   * Returns an unclosed InputStream. It's the caller responsibility to close it.
+   *
+   * @return InputStream
+   */
+  @Override
+  public InputStream getLogInputStream() {
+    return doGetLog(InputStream.class);
   }
 
   @Override
@@ -160,7 +165,7 @@ public class BuildOperationsImpl extends OpenShiftOperation<Build, BuildList,
       // In case of Build we directly get logs at Build Url, but we need to wait for Pods
       waitUntilBuildPodBecomesReady(fromServer().get());
       URL url = new URL(URLUtils.join(getResourceUrl().toString(), getLogParameters() + "&follow=true"));
-      final LogWatchCallback callback = new LogWatchCallback(this.config, out);
+      final LogWatchCallback callback = new LogWatchCallback(out, this.context.getExecutor());
       return callback.callAndWait(this.httpClient, url);
     } catch (IOException t) {
       throw KubernetesClientException.launderThrowable(forOperationType("watchLog"), t);
@@ -168,61 +173,56 @@ public class BuildOperationsImpl extends OpenShiftOperation<Build, BuildList,
   }
 
   @Override
-  public Loggable<LogWatch> withLogWaitTimeout(Integer logWaitTimeout) {
+  public Loggable withLogWaitTimeout(Integer logWaitTimeout) {
     BuildOperationsImpl result = newInstance(context);
     result.podLogWaitTimeout = logWaitTimeout;
     return result;
   }
 
   @Override
-  public Loggable<LogWatch> withPrettyOutput() {
+  public Loggable withPrettyOutput() {
     return new BuildOperationsImpl(getContext().withPrettyOutput(true), context);
   }
 
   @Override
-  public PrettyLoggable<LogWatch> tailingLines(int tailingLines) {
+  public PrettyLoggable tailingLines(int tailingLines) {
     return new BuildOperationsImpl(getContext().withTailingLines(tailingLines), context);
   }
 
   @Override
-  public TimeTailPrettyLoggable<LogWatch> terminated() {
+  public TimeTailPrettyLoggable terminated() {
     return new BuildOperationsImpl(getContext().withTerminatedStatus(true), context);
   }
 
   @Override
-  public TailPrettyLoggable<LogWatch> sinceTime(String sinceTimestamp) {
+  public TailPrettyLoggable sinceTime(String sinceTimestamp) {
     return new BuildOperationsImpl(getContext().withSinceTimestamp(sinceTimestamp), context);
   }
 
   @Override
-  public TailPrettyLoggable<LogWatch> sinceSeconds(int sinceSeconds) {
+  public TailPrettyLoggable sinceSeconds(int sinceSeconds) {
     return new BuildOperationsImpl(getContext().withSinceSeconds(sinceSeconds), context);
   }
 
   @Override
-  public BytesLimitTerminateTimeTailPrettyLoggable<LogWatch> limitBytes(int limitBytes) {
+  public BytesLimitTerminateTimeTailPrettyLoggable limitBytes(int limitBytes) {
     return new BuildOperationsImpl(getContext().withLimitBytes(limitBytes), context);
   }
 
   @Override
-  public BytesLimitTerminateTimeTailPrettyLoggable<LogWatch> usingTimestamps() {
+  public BytesLimitTerminateTimeTailPrettyLoggable usingTimestamps() {
     return new BuildOperationsImpl(getContext().withTimestamps(true), context);
   }
 
-  @Override
-  protected VisitableBuilder<Build, ?> createVisitableBuilder(Build item) {
-    return new BuildBuilder(item);
-  }
-
   private void waitUntilBuildPodBecomesReady(Build build) {
-    List<PodResource<Pod>> podOps = PodOperationUtil.getPodOperationsForController(context, build.getMetadata().getUid(),
-      getBuildPodLabels(build), withPrettyOutput, podLogWaitTimeout, null);
+    List<PodResource> podOps = PodOperationUtil.getPodOperationsForController(context, build.getMetadata().getUid(),
+        getBuildPodLabels(build), withPrettyOutput, podLogWaitTimeout, null);
 
     waitForBuildPodToBecomeReady(podOps, podLogWaitTimeout != null ? podLogWaitTimeout : DEFAULT_POD_LOG_WAIT_TIMEOUT);
   }
 
-  private static void waitForBuildPodToBecomeReady(List<PodResource<Pod>> podOps, Integer podLogWaitTimeout) {
-    for (PodResource<Pod> podOp : podOps) {
+  private static void waitForBuildPodToBecomeReady(List<PodResource> podOps, Integer podLogWaitTimeout) {
+    for (PodResource podOp : podOps) {
       PodOperationUtil.waitUntilReadyBeforeFetchingLogs(podOp, podLogWaitTimeout);
     }
   }

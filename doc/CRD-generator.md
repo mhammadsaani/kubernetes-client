@@ -152,9 +152,107 @@ The field will be skipped in the generated CRD and will not appear in the schema
             type: object
 ```
 
-### javax.validation.constraints.NotNull
+### io.fabric8.generator.annotation.Min
 
-If a field or one of its accessors is annotated with `javax.validation.constraints.NotNull`
+If a field or one of its accessors is annotated with `io.fabric8.generator.annotation.Min`
+
+```java
+public class ExampleSpec {
+  @Min(-1)
+  int someValue;
+}
+```
+
+The field will have the `minimum` property in the generated CRD, such as:
+
+```yaml
+          spec:
+            properties:
+              someValue:
+                minimum: -1.0
+                type: integer
+            required:
+            - someValue
+            type: object
+```
+
+### io.fabric8.generator.annotation.Max
+
+If a field or one of its accessors is annotated with `io.fabric8.generator.annotation.Max`
+
+```java
+public class ExampleSpec {
+  @Min(1)
+  int someValue;
+}
+```
+
+The field will have the `maximum` property in the generated CRD, such as:
+
+```yaml
+          spec:
+            properties:
+              someValue:
+                maximum: 1.0
+                type: integer
+            required:
+            - someValue
+            type: object
+```
+
+### io.fabric8.generator.annotation.Pattern
+
+If a field or one of its accessors is annotated with `io.fabric8.generator.annotation.Pattern`
+
+```java
+public class ExampleSpec {
+  @Pattern("\\b[1-9]\\b")
+  String someValue;
+}
+```
+
+The field will have the `pattern` property in the generated CRD, such as:
+
+```yaml
+          spec:
+            properties:
+              someValue:
+                maximum: "\\b[1-9]\\b"
+                type: string
+            required:
+            - someValue
+            type: object
+```
+
+### io.fabric8.generator.annotation.Nullable
+
+If a field or one of its accessors is annotated with `io.fabric8.generator.annotation.Nullable`
+
+```java
+public class ExampleSpec {
+  @Nullable
+  String someValue;
+}
+```
+
+The field will have the `nullable` property in the generated CRD, such as:
+
+```yaml
+          spec:
+            properties:
+              someValue:
+                nullable: true
+                type: string
+            required:
+            - someValue
+            type: object
+```
+
+### io.fabric8.generator.annotation.Required
+
+__DEPRECATED:__ `javax.validation.constraints.NotNull`
+
+If a field or one of its accessors is annotated with `io.fabric8.generator.annotation.Required`
 
 ```java
 public class ExampleSpec {
@@ -201,6 +299,32 @@ The CRD generator will substitute the default type inferred from the field and r
             type: object
 ```
 
+### io.fabric8.crd.generator.annotation.SchemaSwap
+
+If a class is annotated with `io.fabric8.crd.generator.annotation.SchemaSwap`
+
+```java
+@SchemaSwap(originalType = ExampleSpec.class, fieldName = "someValue", targetType = ExampleStatus.class)
+public class Example extends CustomResource<ExampleSpec, ExampleStatus> implements Namespaced {}
+```
+
+The CRD generator will perform the same substitution as a `SchemaFrom` annotation with `value` equal to `targetType` was placed on the field named `fieldName` in the `originalType` class:
+
+```yaml
+          spec:
+            properties:
+              someValue:
+                properties:
+                  error:
+                    type: boolean
+                  message:
+                    type: string
+                type: object
+            type: object
+```
+
+The name of the field is restricted to the original `fieldName` and should be backed by a matching concrete field of the matching class. Getters, setters, and constructors are not taken into consideration.
+
 ### Generating `x-kubernetes-preserve-unknown-fields: true`
 
 If a field or one of its accessors is annotated with
@@ -235,16 +359,44 @@ Corresponding `x-kubernetes-preserve-unknown-fields: true` will be generated in 
             x-kubernetes-preserve-unknown-fields: true
 ```
 
+You can also annotate a field with `io.fabric8.crd.generator.annotation.PreserveUnknownFields`:
+
+```java
+interface ExampleInterface {}
+
+public class ExampleSpec {
+    @PreserveUnknownFields
+    ExampleInterface someValue;
+}
+```
+
+will be generated as:
+
+```yaml
+          spec:
+            properties:
+              someValue:
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+            type: object
+```
+
 ## Features cheatsheet
 
-| Annotation | Description |
-|-----------------------------------------------------------|---------------------------------------------------------------------------------------|
-| `com.fasterxml.jackson.annotation.JsonProperty`           | The field is named after the provided value instead of looking up the java field name |
-| `com.fasterxml.jackson.annotation.JsonPropertyDescription`| The provided text is be embedded in the `description` of the field                    |
-| `com.fasterxml.jackson.annotation.JsonIgnore`             | The field is ignored                                                                  |
-| `com.fasterxml.jackson.annotation.JsonAnyGetter`          | The corresponding object have `x-kubernetes-preserve-unknown-fields: true` defined    |
-| `com.fasterxml.jackson.annotation.JsonAnySetter`          | The corresponding object have `x-kubernetes-preserve-unknown-fields: true` defined    |
-| `javax.validation.constraints.NotNull`                    | The field is marked as `required`                                                     |
-| `io.fabric8.crd.generator.annotation.SchemaFrom`          | The field type for the generation is the one coming from the annotation               |
+| Annotation                                                   | Description                                                                           |
+|--------------------------------------------------------------|---------------------------------------------------------------------------------------|
+| `com.fasterxml.jackson.annotation.JsonProperty`              | The field is named after the provided value instead of looking up the java field name |
+| `com.fasterxml.jackson.annotation.JsonPropertyDescription`   | The provided text is be embedded in the `description` of the field                    |
+| `com.fasterxml.jackson.annotation.JsonIgnore`                | The field is ignored                                                                  |
+| `io.fabric8.crd.generator.annotation.PreserveUnknownFields`  | The field have `x-kubernetes-preserve-unknown-fields: true` defined                   |
+| `com.fasterxml.jackson.annotation.JsonAnyGetter`             | The corresponding object have `x-kubernetes-preserve-unknown-fields: true` defined    |
+| `com.fasterxml.jackson.annotation.JsonAnySetter`             | The corresponding object have `x-kubernetes-preserve-unknown-fields: true` defined    |
+| `io.fabric8.generator.annotation.Min`                        | The field defines a validation `min`                                                  |
+| `io.fabric8.generator.annotation.Max`                        | The field defines a validation `max`                                                  |
+| `io.fabric8.generator.annotation.Pattern`                    | The field defines a validation `pattern`                                              |
+| `io.fabric8.generator.annotation.Nullable`                   | The field is marked as `nullable`                                                     |
+| `io.fabric8.generator.annotation.Required`                   | The field is marked as `required`                                                     |
+| `io.fabric8.crd.generator.annotation.SchemaFrom`             | The field type for the generation is the one coming from the annotation               |
+| `io.fabric8.crd.generator.annotation.SchemaSwap`             | Same as SchemaFrom, but can be applied at any point in the class hierarchy            |
 
 A field of type `com.fasterxml.jackson.databind.JsonNode` is encoded as an empty object with `x-kubernetes-preserve-unknown-fields: true` defined.

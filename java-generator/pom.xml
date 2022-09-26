@@ -23,7 +23,7 @@
   <parent>
     <groupId>io.fabric8</groupId>
     <artifactId>kubernetes-client-project</artifactId>
-    <version>6.0-SNAPSHOT</version>
+    <version>6.2-SNAPSHOT</version>
   </parent>
 
   <artifactId>java-generator-parent</artifactId>
@@ -37,46 +37,4 @@
     <module>it</module>
   </modules>
 
-  <build>
-    <plugins>
-        <plugin>
-            <groupId>com.diffplug.spotless</groupId>
-            <artifactId>spotless-maven-plugin</artifactId>
-            <version>2.20.2</version>
-            <configuration>
-                <formats>
-                    <format>
-                        <includes>
-                            <include>*.md</include>
-                            <include>.gitignore</include>
-                        </includes>
-
-                        <trimTrailingWhitespace />
-
-                        <endWithNewline />
-
-                        <indent>
-                            <spaces>true</spaces>
-                            <spacesPerTab>4</spacesPerTab>
-                        </indent>
-                    </format>
-                </formats>
-                <java>
-                    <importOrder />
-                    <googleJavaFormat>
-                        <version>1.13.0</version>
-                        <style>AOSP</style>
-                    </googleJavaFormat>
-                </java>
-            </configuration>
-            <executions>
-              <execution>
-                <goals>
-                  <goal>apply</goal>
-                </goals>
-              </execution>
-            </executions>
-        </plugin>
-    </plugins>
-  </build>
 </project>

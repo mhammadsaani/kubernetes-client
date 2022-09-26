@@ -15,7 +15,8 @@
  */
 package io.fabric8.kubernetes.client.dsl;
 
-import io.fabric8.kubernetes.client.Watcher;
+public interface WatchAndWaitable<T> extends Watchable<T>, Waitable<T, T> {
 
-public interface WatchAndWaitable<T> extends Watchable<Watcher<T>>, Waitable<T, T> {
+  Watchable<T> withResourceVersion(String resourceVersion);
+
 }

@@ -22,7 +22,7 @@
   <parent>
     <artifactId>kubernetes-client-project</artifactId>
     <groupId>io.fabric8</groupId>
-    <version>6.0-SNAPSHOT</version>
+    <version>6.2-SNAPSHOT</version>
   </parent>
 
   <artifactId>kubernetes-itests</artifactId>
@@ -31,24 +31,23 @@
 
   <dependencies>
     <dependency>
-      <groupId>junit</groupId>
-      <artifactId>junit</artifactId>
-      <!-- Arquillian is still not compatible with Junit 5, so using Junit 4 here -->
-      <version>${junit.compatible-with-arquillian.version}</version>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter-engine</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter-params</artifactId>
+        <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.fabric8</groupId>
+      <artifactId>kubernetes-junit-jupiter</artifactId>
+      <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>io.fabric8</groupId>
       <artifactId>openshift-client</artifactId>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.arquillian.cube</groupId>
-      <artifactId>arquillian-cube-requirement</artifactId>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.arquillian.cube</groupId>
-      <artifactId>arquillian-cube-openshift-starter</artifactId>
       <scope>test</scope>
     </dependency>
     <dependency>
@@ -59,6 +58,69 @@
       <groupId>org.awaitility</groupId>
       <artifactId>awaitility</artifactId>
     </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-simple</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
+  <profiles>
+    <profile>
+      <id>httpclient-jdk</id>
+      <dependencies>
+        <dependency>
+          <groupId>io.fabric8</groupId>
+          <artifactId>openshift-client</artifactId>
+          <scope>test</scope>
+          <exclusions>
+            <exclusion>
+              <groupId>io.fabric8</groupId>
+              <artifactId>kubernetes-httpclient-okhttp</artifactId>
+            </exclusion>
+          </exclusions>
+        </dependency>
+        <dependency>
+          <groupId>io.fabric8</groupId>
+          <artifactId>kubernetes-httpclient-jdk</artifactId>
+        </dependency>
+      </dependencies>
+      <repositories>
+        <repository>
+          <id>sonatype-snapshots</id>
+          <url>https://oss.sonatype.org/content/repositories/snapshots</url>
+          <releases><enabled>false</enabled></releases>
+          <snapshots><enabled>true</enabled></snapshots>
+        </repository>
+      </repositories>
+    </profile>
+    <profile>
+      <id>httpclient-jetty</id>
+      <dependencies>
+        <dependency>
+          <groupId>io.fabric8</groupId>
+          <artifactId>openshift-client</artifactId>
+          <scope>test</scope>
+          <exclusions>
+            <exclusion>
+              <groupId>io.fabric8</groupId>
+              <artifactId>kubernetes-httpclient-okhttp</artifactId>
+            </exclusion>
+          </exclusions>
+        </dependency>
+        <dependency>
+          <groupId>io.fabric8</groupId>
+          <artifactId>kubernetes-httpclient-jetty</artifactId>
+        </dependency>
+      </dependencies>
+      <repositories>
+        <repository>
+          <id>sonatype-snapshots</id>
+          <url>https://oss.sonatype.org/content/repositories/snapshots</url>
+          <releases><enabled>false</enabled></releases>
+          <snapshots><enabled>true</enabled></snapshots>
+        </repository>
+      </repositories>
+    </profile>
+  </profiles>
 </project>

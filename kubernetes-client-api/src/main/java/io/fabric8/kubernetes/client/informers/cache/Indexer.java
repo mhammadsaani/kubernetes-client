@@ -22,14 +22,15 @@ import java.util.function.Function;
 /**
  * Indexer extends Store interface and add index/de-index methods.
  *
- * This implementation has been taken from official client: https://github.com/kubernetes-client/java/blob/master/util/src/main/java/io/kubernetes/client/informer/cache/Indexer.java
+ * This implementation has been taken from official client:
+ * https://github.com/kubernetes-client/java/blob/master/util/src/main/java/io/kubernetes/client/informer/cache/Indexer.java
  * which has been ported from official go client: https://github.com/kubernetes/client-go/blob/master/tools/cache/index.go
  *
  * @param <T> resource
  */
 public interface Indexer<T> extends Store<T> {
   /**
-   * Retrieve list of obejcts that match on the named indexing function.
+   * Retrieve list of objects that match on the named indexing function.
    *
    * @param indexName specific indexing function
    * @param obj object
@@ -68,4 +69,11 @@ public interface Indexer<T> extends Store<T> {
    * @param indexers indexers to add
    */
   void addIndexers(Map<String, Function<T, List<String>>> indexers);
+
+  /**
+   * Remove the named index
+   *
+   * @param name
+   */
+  void removeIndexer(String name);
 }

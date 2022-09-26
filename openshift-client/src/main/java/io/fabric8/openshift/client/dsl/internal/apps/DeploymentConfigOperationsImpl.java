@@ -15,29 +15,28 @@
  */
 package io.fabric8.openshift.client.dsl.internal.apps;
 
-import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.api.model.autoscaling.v1.Scale;
+import io.fabric8.kubernetes.client.Client;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.KubernetesClientTimeoutException;
 import io.fabric8.kubernetes.client.dsl.LogWatch;
 import io.fabric8.kubernetes.client.dsl.Loggable;
 import io.fabric8.kubernetes.client.dsl.PodResource;
-import io.fabric8.kubernetes.client.dsl.base.OperationContext;
-import io.fabric8.kubernetes.client.dsl.base.PatchContext;
+import io.fabric8.kubernetes.client.dsl.internal.HasMetadataOperation;
 import io.fabric8.kubernetes.client.dsl.internal.HasMetadataOperationsImpl;
 import io.fabric8.kubernetes.client.dsl.internal.LogWatchCallback;
+import io.fabric8.kubernetes.client.dsl.internal.OperationContext;
 import io.fabric8.kubernetes.client.dsl.internal.RollingOperationContext;
-import io.fabric8.kubernetes.client.utils.PodOperationUtil;
 import io.fabric8.kubernetes.client.utils.URLUtils;
 import io.fabric8.kubernetes.client.utils.URLUtils.URLBuilder;
+import io.fabric8.kubernetes.client.utils.internal.PodOperationUtil;
 import io.fabric8.openshift.api.model.DeploymentConfig;
 import io.fabric8.openshift.api.model.DeploymentConfigList;
-import io.fabric8.openshift.client.OpenshiftClientContext;
 import io.fabric8.openshift.client.dsl.DeployableScalableResource;
-import io.fabric8.openshift.client.dsl.internal.OpenShiftOperation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.Reader;
 import java.net.MalformedURLException;
@@ -48,21 +47,20 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
-import java.util.function.UnaryOperator;
 
 import static io.fabric8.openshift.client.OpenShiftAPIGroups.APPS;
 
-public class DeploymentConfigOperationsImpl extends OpenShiftOperation<DeploymentConfig, DeploymentConfigList,
-  DeployableScalableResource<DeploymentConfig>> implements DeployableScalableResource<DeploymentConfig> {
+public class DeploymentConfigOperationsImpl
+    extends HasMetadataOperation<DeploymentConfig, DeploymentConfigList, DeployableScalableResource<DeploymentConfig>>
+    implements DeployableScalableResource<DeploymentConfig> {
 
   private static final Logger LOG = LoggerFactory.getLogger(DeploymentConfigOperationsImpl.class);
   private static final Integer DEFAULT_POD_LOG_WAIT_TIMEOUT = 5;
   public static final String OPENSHIFT_IO_DEPLOYMENT_CONFIG_NAME = "openshift.io/deployment-config.name";
   private final RollingOperationContext rollingOperationContext;
 
-  public DeploymentConfigOperationsImpl(OpenshiftClientContext clientContext) {
-    this(new RollingOperationContext(), HasMetadataOperationsImpl.defaultContext(clientContext));
+  public DeploymentConfigOperationsImpl(Client client) {
+    this(new RollingOperationContext(), HasMetadataOperationsImpl.defaultContext(client));
   }
 
   public DeploymentConfigOperationsImpl(RollingOperationContext context, OperationContext superContext) {
@@ -77,39 +75,6 @@ public class DeploymentConfigOperationsImpl extends OpenShiftOperation<Deploymen
   }
 
   @Override
-  public DeploymentConfig edit(UnaryOperator<DeploymentConfig> function) {
-    if (isCascading()) {
-      return cascading(false).edit(function);
-    }
-    return super.edit(function);
-  }
-
-  @Override
-  public DeploymentConfig accept(Consumer<DeploymentConfig> consumer) {
-    if (isCascading()) {
-      return cascading(false).accept(consumer);
-    }
-    return super.accept(consumer);
-  }
-
-
-  @Override
-  public DeploymentConfig replace(DeploymentConfig item) {
-    if (isCascading()) {
-      return cascading(false).replace(item);
-    }
-    return super.replace(item);
-  }
-
-  @Override
-  public DeploymentConfig patch(PatchContext patchContext, DeploymentConfig item) {
-    if (isCascading()) {
-      return cascading(false).patch(patchContext, item);
-    }
-    return super.patch(patchContext, item);
-  }
-
-  @Override
   public DeploymentConfig deployLatest() {
     return deployLatest(false);
   }
@@ -117,11 +82,11 @@ public class DeploymentConfigOperationsImpl extends OpenShiftOperation<Deploymen
   @Override
   public DeploymentConfig deployLatest(boolean wait) {
     Long currentVersion = getMandatory().getStatus().getLatestVersion();
-    if(currentVersion == null){
+    if (currentVersion == null) {
       currentVersion = 1L;
     }
     final Long latestVersion = currentVersion + 1;
-    DeploymentConfig deployment = cascading(false).accept(d -> d.getStatus().setLatestVersion(latestVersion));
+    DeploymentConfig deployment = accept(d -> d.getStatus().setLatestVersion(latestVersion));
     if (wait) {
       waitUntilDeploymentConfigIsScaled(deployment.getSpec().getReplicas());
       deployment = getMandatory();
@@ -136,7 +101,7 @@ public class DeploymentConfigOperationsImpl extends OpenShiftOperation<Deploymen
 
   @Override
   public DeploymentConfig scale(int count, boolean wait) {
-    DeploymentConfig deployment = cascading(false).accept(d -> d.getSpec().setReplicas(count));
+    DeploymentConfig deployment = accept(d -> d.getSpec().setReplicas(count));
     if (wait) {
       waitUntilDeploymentConfigIsScaled(count);
       deployment = getMandatory();
@@ -174,7 +139,8 @@ public class DeploymentConfigOperationsImpl extends OpenShiftOperation<Deploymen
               + checkName(getItem()) + " to scale. Resource is no longer available.");
         }
         replicasRef.set(deploymentConfig.getStatus().getReplicas());
-        int currentReplicas = deploymentConfig.getStatus().getReplicas() != null ? deploymentConfig.getStatus().getReplicas() : 0;
+        int currentReplicas = deploymentConfig.getStatus().getReplicas() != null ? deploymentConfig.getStatus().getReplicas()
+            : 0;
         if (deploymentConfig.getStatus().getObservedGeneration() >= deploymentConfig.getMetadata().getGeneration()
             && Objects.equals(deploymentConfig.getSpec().getReplicas(), currentReplicas)) {
           return true;
@@ -199,7 +165,7 @@ public class DeploymentConfigOperationsImpl extends OpenShiftOperation<Deploymen
   }
 
   @Override
-  public String getLog(Boolean isPretty) {
+  public String getLog(boolean isPretty) {
     return doGetLog(isPretty, String.class);
   }
 
@@ -214,11 +180,22 @@ public class DeploymentConfigOperationsImpl extends OpenShiftOperation<Deploymen
 
   /**
    * Returns an unclosed Reader. It's the caller responsibility to close it.
+   *
    * @return Reader
    */
   @Override
   public Reader getLogReader() {
     return doGetLog(false, Reader.class);
+  }
+
+  /**
+   * Returns an unclosed InputStream. It's the caller responsibility to close it.
+   *
+   * @return InputStream
+   */
+  @Override
+  public InputStream getLogInputStream() {
+    return doGetLog(false, InputStream.class);
   }
 
   @Override
@@ -232,7 +209,7 @@ public class DeploymentConfigOperationsImpl extends OpenShiftOperation<Deploymen
       // In case of DeploymentConfig we directly get logs at DeploymentConfig Url, but we need to wait for Pods
       waitUntilDeploymentConfigPodBecomesReady(fromServer().get());
       URL url = getResourceLogUrl(false, true);
-      final LogWatchCallback callback = new LogWatchCallback(this.config, out);
+      final LogWatchCallback callback = new LogWatchCallback(out, this.context.getExecutor());
       return callback.callAndWait(this.httpClient, url);
     } catch (Throwable t) {
       throw KubernetesClientException.launderThrowable(forOperationType("watchLog"), t);
@@ -251,20 +228,21 @@ public class DeploymentConfigOperationsImpl extends OpenShiftOperation<Deploymen
   }
 
   @Override
-  public Loggable<LogWatch> withLogWaitTimeout(Integer logWaitTimeout) {
+  public Loggable withLogWaitTimeout(Integer logWaitTimeout) {
     return new DeploymentConfigOperationsImpl(rollingOperationContext.withLogWaitTimout(logWaitTimeout), context);
   }
 
   private void waitUntilDeploymentConfigPodBecomesReady(DeploymentConfig deploymentConfig) {
     Integer podLogWaitTimeout = rollingOperationContext.getLogWaitTimeout();
-    List<PodResource<Pod>> podOps = PodOperationUtil.getPodOperationsForController(context, deploymentConfig.getMetadata().getUid(),
-      getDeploymentConfigPodLabels(deploymentConfig), false, podLogWaitTimeout, rollingOperationContext.getContainerId());
+    List<PodResource> podOps = PodOperationUtil.getPodOperationsForController(context,
+        deploymentConfig.getMetadata().getUid(),
+        getDeploymentConfigPodLabels(deploymentConfig), false, podLogWaitTimeout, rollingOperationContext.getContainerId());
 
     waitForBuildPodToBecomeReady(podOps, podLogWaitTimeout != null ? podLogWaitTimeout : DEFAULT_POD_LOG_WAIT_TIMEOUT);
   }
 
-  private static void waitForBuildPodToBecomeReady(List<PodResource<Pod>> podOps, Integer podLogWaitTimeout) {
-    for (PodResource<Pod> podOp : podOps) {
+  private static void waitForBuildPodToBecomeReady(List<PodResource> podOps, Integer podLogWaitTimeout) {
+    for (PodResource podOp : podOps) {
       PodOperationUtil.waitUntilReadyBeforeFetchingLogs(podOp, podLogWaitTimeout);
     }
   }
@@ -278,7 +256,7 @@ public class DeploymentConfigOperationsImpl extends OpenShiftOperation<Deploymen
   }
 
   @Override
-  public Loggable<LogWatch> inContainer(String id) {
+  public Loggable inContainer(String id) {
     return new DeploymentConfigOperationsImpl(rollingOperationContext.withContainerId(id), context);
   }
 }

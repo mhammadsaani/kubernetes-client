@@ -15,26 +15,29 @@
  */
 package io.fabric8.java.generator.nodes;
 
-import com.github.javaparser.ast.CompilationUnit;
+import com.fasterxml.jackson.databind.JsonNode;
+import io.fabric8.java.generator.Config;
+
 import java.util.ArrayList;
 
 public class JPrimitive extends AbstractJSONSchema2Pojo {
-    private final String type;
+  private final String type;
 
-    private static final GeneratorResult empty =
-            new GeneratorResult(new ArrayList<>(), new ArrayList<>());
+  private static final GeneratorResult empty = new GeneratorResult(new ArrayList<>(), new ArrayList<>());
 
-    public JPrimitive(String type) {
-        this.type = type;
-    }
+  public JPrimitive(String type, Config config, String description, final boolean isNullable, JsonNode defaultValue,
+      final ValidationProperties validationProperties) {
+    super(config, description, isNullable, defaultValue, validationProperties);
+    this.type = type;
+  }
 
-    @Override
-    public String getType() {
-        return type;
-    }
+  @Override
+  public String getType() {
+    return type;
+  }
 
-    @Override
-    public GeneratorResult generateJava(CompilationUnit cu) {
-        return empty;
-    }
+  @Override
+  public GeneratorResult generateJava() {
+    return empty;
+  }
 }

@@ -15,8 +15,10 @@
  */
 package io.fabric8.crd.example.extraction;
 
+import io.fabric8.crd.generator.annotation.SchemaSwap;
 import io.fabric8.kubernetes.client.CustomResource;
 
+@SchemaSwap(originalType = ExtractionSpec.class, fieldName = "bar", targetType = FooExtractor.class)
 public class Extraction extends  CustomResource<ExtractionSpec, Void> {
 
 }

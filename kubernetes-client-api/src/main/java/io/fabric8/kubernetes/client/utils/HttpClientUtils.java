@@ -22,79 +22,64 @@ import io.fabric8.kubernetes.client.http.HttpClient;
 import io.fabric8.kubernetes.client.http.HttpHeaders;
 import io.fabric8.kubernetes.client.http.Interceptor;
 import io.fabric8.kubernetes.client.internal.SSLUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import javax.net.ssl.KeyManager;
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.TrustManager;
-
-import java.lang.reflect.InvocationTargetException;
 import java.net.InetSocketAddress;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
+import java.util.ServiceLoader;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
+
+import javax.net.ssl.KeyManager;
+import javax.net.ssl.TrustManager;
 
 public class HttpClientUtils {
 
-  public static final String HEADER_INTERCEPTOR = "HEADER";
+  private static final Logger LOGGER = LoggerFactory.getLogger(HttpClientUtils.class);
+  private static final String HEADER_INTERCEPTOR = "HEADER";
+  private static final String KUBERNETES_BACKWARDS_COMPATIBILITY_INTERCEPTOR_DISABLE = "kubernetes.backwardsCompatibilityInterceptor.disable";
+  private static final String BACKWARDS_COMPATIBILITY_DISABLE_DEFAULT = "true";
+  private static final Pattern IPV4_PATTERN = Pattern.compile(
+      "(http://|https://)?(?<ipAddressOrSubnet>(([01]?\\d\\d?|2[0-4]\\d|25[0-5])\\.){3}([01]?\\d\\d?|2[0-4]\\d|25[0-5])(\\/[0-9]\\d|1[0-9]\\d|2[0-9]\\d|3[0-2]\\d)?)");
+  private static final Pattern INVALID_HOST_PATTERN = Pattern.compile("[^\\da-zA-Z.\\-/:]+");
+  private static final AtomicBoolean MULTIPLE_HTTP_CLIENT_WARNING_LOGGED = new AtomicBoolean();
 
-  private HttpClientUtils() { }
-
-  private static Pattern VALID_IPV4_PATTERN = null;
-  public static final String ipv4Pattern = "(http:\\/\\/|https:\\/\\/)?(([01]?\\d\\d?|2[0-4]\\d|25[0-5])\\.){3}([01]?\\d\\d?|2[0-4]\\d|25[0-5])(\\/[0-9]\\d|1[0-9]\\d|2[0-9]\\d|3[0-2]\\d)?";
-  protected static final String KUBERNETES_BACKWARDS_COMPATIBILITY_INTERCEPTOR_DISABLE = "kubernetes.backwardsCompatibilityInterceptor.disable";
-
-  static {
-    try {
-      VALID_IPV4_PATTERN = Pattern.compile(ipv4Pattern, Pattern.CASE_INSENSITIVE);
-    } catch (PatternSyntaxException e) {
-      throw KubernetesClientException.launderThrowable("Unable to compile ipv4address pattern.", e);
-    }
+  private HttpClientUtils() {
   }
 
-    public static URL getProxyUrl(Config config) throws MalformedURLException {
-        URL master = new URL(config.getMasterUrl());
-        String host = master.getHost();
-        if (config.getNoProxy() != null) {
-	        for (String noProxy : config.getNoProxy()) {
-            if (isIpAddress(noProxy)) {
-              if (new IpAddressMatcher(noProxy).matches(host)) {
-                return null;
-              }
-            } else {
-              if (host.contains(noProxy)) {
-                return null;
-              }
-            }
-	        }
-        }
-        String proxy = config.getHttpsProxy();
-        if (master.getProtocol().equals("http")) {
-            proxy = config.getHttpProxy();
-        }
-        if (proxy != null) {
-            URL proxyUrl = new URL(proxy);
-            if (proxyUrl.getPort() < 0) {
-              throw new IllegalArgumentException("Failure in creating proxy URL. Proxy port is required!");
-            }
-            return proxyUrl;
-        }
-        return null;
+  public static URL getProxyUrl(Config config) throws MalformedURLException {
+    URL master = new URL(config.getMasterUrl());
+    String host = master.getHost();
+    if (isHostMatchedByNoProxy(host, config.getNoProxy())) {
+      return null;
     }
-
-    private static boolean isIpAddress(String ipAddress) {
-        Matcher ipMatcher = VALID_IPV4_PATTERN.matcher(ipAddress);
-        return ipMatcher.matches();
+    String proxy = config.getHttpsProxy();
+    if (master.getProtocol().equals("http")) {
+      proxy = config.getHttpProxy();
     }
+    if (proxy != null) {
+      URL proxyUrl = new URL(proxy);
+      if (proxyUrl.getPort() < 0) {
+        throw new IllegalArgumentException("Failure in creating proxy URL. Proxy port is required!");
+      }
+      return proxyUrl;
+    }
+    return null;
+  }
 
-  public static Map<String, io.fabric8.kubernetes.client.http.Interceptor> createApplicableInterceptors(Config config, HttpClient.Factory factory) {
+  public static Map<String, io.fabric8.kubernetes.client.http.Interceptor> createApplicableInterceptors(Config config,
+      HttpClient.Factory factory) {
     Map<String, io.fabric8.kubernetes.client.http.Interceptor> interceptors = new LinkedHashMap<>();
 
     // Header Interceptor
@@ -109,7 +94,7 @@ public class HttpClientUtils {
         }
         if (config.getCustomHeaders() != null && !config.getCustomHeaders().isEmpty()) {
           for (Map.Entry<String, String> entry : config.getCustomHeaders().entrySet()) {
-            builder.header(entry.getKey(),entry.getValue());
+            builder.header(entry.getKey(), entry.getValue());
           }
         }
         if (config.getUserAgent() != null && !config.getUserAgent().isEmpty()) {
@@ -122,7 +107,9 @@ public class HttpClientUtils {
     // Token Refresh Interceptor
     interceptors.put(TokenRefreshInterceptor.NAME, new TokenRefreshInterceptor(config, factory));
     // Backwards Compatibility Interceptor
-    String shouldDisableBackwardsCompatibilityInterceptor = Utils.getSystemPropertyOrEnvVar(KUBERNETES_BACKWARDS_COMPATIBILITY_INTERCEPTOR_DISABLE, "false");
+    String shouldDisableBackwardsCompatibilityInterceptor = Utils
+        .getSystemPropertyOrEnvVar(KUBERNETES_BACKWARDS_COMPATIBILITY_INTERCEPTOR_DISABLE,
+            BACKWARDS_COMPATIBILITY_DISABLE_DEFAULT);
     if (!Boolean.parseBoolean(shouldDisableBackwardsCompatibilityInterceptor)) {
       interceptors.put(BackwardsCompatibilityInterceptor.NAME, new BackwardsCompatibilityInterceptor());
     }
@@ -136,16 +123,30 @@ public class HttpClientUtils {
     return "Basic " + encoded;
   }
 
+  /**
+   * @deprecated you should not need to call this method directly. Please create your own HttpClient.Factory
+   *             should you need to customize your clients.
+   */
+  @Deprecated
   public static HttpClient createHttpClient(Config config) {
-    // TODO: replace with service load
-    try {
-        return ((HttpClient.Factory) Class.forName("io.fabric8.kubernetes.client.okhttp.OkHttpClientFactory")
-                .getDeclaredConstructor()
-                .newInstance()).createHttpClient(config);
-    } catch (InstantiationException | IllegalAccessException | IllegalArgumentException | InvocationTargetException
-            | NoSuchMethodException | SecurityException | ClassNotFoundException e) {
-        throw KubernetesClientException.launderThrowable(e);
+    ServiceLoader<HttpClient.Factory> loader = ServiceLoader.load(HttpClient.Factory.class);
+    HttpClient.Factory factory = null;
+    for (Iterator<HttpClient.Factory> iter = loader.iterator(); iter.hasNext();) {
+      HttpClient.Factory possible = iter.next();
+      if (factory != null && MULTIPLE_HTTP_CLIENT_WARNING_LOGGED.compareAndSet(false, true)) {
+        LOGGER.warn("There are multiple httpclient implementation in the classpath, "
+            + "choosing the first non-default implementation. "
+            + "You should exclude dependencies that aren't needed or use an explicit association of the HttpClient.Factory.");
+      }
+      if (factory == null || (factory.isDefault() && !possible.isDefault())) {
+        factory = possible;
+      }
     }
+    if (factory == null) {
+      throw new KubernetesClientException(
+          "No httpclient implementations found on the context classloader, please ensure your classpath includes an implementation jar");
+    }
+    return factory.createHttpClient(config);
   }
 
   public static void applyCommonConfiguration(Config config, HttpClient.Builder builder, HttpClient.Factory factory) {
@@ -187,17 +188,42 @@ public class HttpClientUtils {
       TrustManager[] trustManagers = SSLUtils.trustManagers(config);
       KeyManager[] keyManagers = SSLUtils.keyManagers(config);
 
-      SSLContext sslContext = SSLUtils.sslContext(keyManagers, trustManagers);
-      builder.sslContext(sslContext, trustManagers);
+      builder.sslContext(keyManagers, trustManagers);
 
       if (config.getTlsVersions() != null && config.getTlsVersions().length > 0) {
         builder.tlsVersions(config.getTlsVersions());
       }
 
     } catch (Exception e) {
-      KubernetesClientException.launderThrowable(e);
+      throw KubernetesClientException.launderThrowable(e);
     }
     HttpClientUtils.createApplicableInterceptors(config, factory).forEach(builder::addOrReplaceInterceptor);
   }
 
+  private static boolean isHostMatchedByNoProxy(String host, String[] noProxies) throws MalformedURLException {
+    for (String noProxy : noProxies == null ? new String[0] : noProxies) {
+      if (INVALID_HOST_PATTERN.matcher(noProxy).find()) {
+        throw new MalformedURLException("NO_PROXY URL contains invalid entry: '" + noProxy + "'");
+      }
+      final Optional<String> noProxyIpOrSubnet = extractIpAddressOrSubnet(noProxy);
+      if (noProxyIpOrSubnet.isPresent()) {
+        if (new IpAddressMatcher(noProxyIpOrSubnet.get()).matches(host)) {
+          return true;
+        }
+      } else {
+        if (host.endsWith(noProxy)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  private static Optional<String> extractIpAddressOrSubnet(String ipAddressOrSubnet) {
+    final Matcher ipMatcher = IPV4_PATTERN.matcher(ipAddressOrSubnet);
+    if (ipMatcher.find()) {
+      return Optional.of(ipMatcher.group("ipAddressOrSubnet"));
+    }
+    return Optional.empty();
+  }
 }

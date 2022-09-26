@@ -15,12 +15,26 @@
  */
 package io.fabric8.kubernetes.client.dsl;
 
-public interface FilterWatchListDeletable<T, L> extends Filterable<FilterWatchListDeletable<T, L>>, WatchListDeletable<T, L> {
-  
+import java.util.stream.Stream;
+
+public interface FilterWatchListDeletable<T, L, R>
+    extends Filterable<FilterWatchListDeletable<T, L, R>>, Listable<L>,
+    WatchAndWaitable<T>,
+    DeletableWithOptions,
+    Informable<T> {
+
   /**
    * Accumulate a filter on the context, when done {@link FilterNested#endFilter()} or and must be called
+   *
    * @return a {@link FilterNested}
    */
-  FilterNested<FilterWatchListDeletable<T, L>> withNewFilter(); 
+  FilterNested<FilterWatchListDeletable<T, L, R>> withNewFilter();
+
+  /**
+   * Perform a list operation and return the items as a stream of {@link Resource}s
+   *
+   * @return the {@link Resource} steam
+   */
+  Stream<R> resources();
 
 }

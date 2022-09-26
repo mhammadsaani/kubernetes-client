@@ -18,27 +18,34 @@ package io.fabric8.kubernetes.client.dsl;
 import io.fabric8.kubernetes.api.model.Status;
 
 import java.io.IOException;
-import java.util.Optional;
 
+/**
+ * Provides callbacks for exec websocket events mainly for logging and testing
+ * <p>
+ * long running operations should not be called as these methods are called directly
+ * from the IO thread.
+ */
 public interface ExecListener {
-  
+
   public interface Response {
-    
+
     int code();
-    
+
     /**
      * May be null if not provided by the underlying implementation.
+     * 
      * @return the body as a String
      * @throws IOException
      */
     String body() throws IOException;
-    
+
   }
 
   /**
    * Called when the request has successfully been upgraded to a web socket.
    */
-  default void onOpen() {}
+  default void onOpen() {
+  }
 
   /**
    * Called when the transport or protocol layer of this web socket errors during communication.
@@ -46,23 +53,29 @@ public interface ExecListener {
    * @param t Throwable
    * @param failureResponse non-null if the failure is caused by the handshake
    */
-  default void onFailure(Throwable t, Response failureResponse) {}
+  default void onFailure(Throwable t, Response failureResponse) {
+  }
 
-    /**
-     * Called when the server sends a close message.
-     *
-     * @param code The <a href="http://tools.ietf.org/html/rfc6455#section-7.4.1">RFC-compliant</a>
-     * status code.
-     * @param reason Reason for close or an empty string.
-     */
-    void onClose(int code, String reason);
-  
+  /**
+   * Called when the server sends a close message.
+   *
+   * @param code The <a href="http://tools.ietf.org/html/rfc6455#section-7.4.1">RFC-compliant</a>
+   *        status code.
+   * @param reason Reason for close or an empty string.
+   */
+  void onClose(int code, String reason);
+
   /**
    * Called after a Status message is seen on channel 3.
+   * <p>
+   * See https://github.com/kubernetes/kubernetes/issues/89899 - which explains there's currently no way to indicate
+   * end of input over a websocket, so you may not get an exit code when using stdIn.
+   * <p>
+   * See also {@link ExecWatch#exitCode()}
    * 
-   * Use {@link ExecWatch#getErrorChannel()} if you need the raw channel 3 contents.
    * @param code the exit code, -1 will be used if the code cannot be determined
    * @param status may be null if no valid status was received
    */
-  default void onExit(int code, Status status) {}
+  default void onExit(int code, Status status) {
+  }
 }

@@ -21,7 +21,7 @@
   <parent>
     <groupId>io.fabric8</groupId>
     <artifactId>kubernetes-client-project</artifactId>
-    <version>6.0-SNAPSHOT</version>
+    <version>6.2-SNAPSHOT</version>
   </parent>
 
   <artifactId>kubernetes-client</artifactId>
@@ -62,14 +62,9 @@
       <scope>test</scope>
     </dependency>
     <dependency>
-      <groupId>com.squareup.okhttp3</groupId>
-      <artifactId>okhttp</artifactId>
-      <version>${okhttp.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>com.squareup.okhttp3</groupId>
-      <artifactId>logging-interceptor</artifactId>
-      <version>${okhttp.version}</version>
+      <groupId>io.fabric8</groupId>
+      <artifactId>kubernetes-httpclient-okhttp</artifactId>
+      <scope>runtime</scope>
     </dependency>
 
     <dependency>
@@ -81,19 +76,16 @@
     <dependency>
       <groupId>org.bouncycastle</groupId>
       <artifactId>bcprov-jdk15on</artifactId>
-      <version>${bouncycastle.version}</version>
       <optional>true</optional>
     </dependency>
     <dependency>
       <groupId>org.bouncycastle</groupId>
       <artifactId>bcpkix-jdk15on</artifactId>
-      <version>${bouncycastle.version}</version>
       <optional>true</optional>
     </dependency>
     <dependency>
       <groupId>org.apache.commons</groupId>
       <artifactId>commons-compress</artifactId>
-      <version>${commons-compress.version}</version>
       <optional>true</optional>
     </dependency>
 
@@ -240,6 +232,9 @@
               <goal>bundle</goal>
             </goals>
             <configuration>
+              <excludeDependencies>
+                kubernetes-httpclient-okhttp
+              </excludeDependencies>
               <instructions>
                 <Bundle-Name>${project.name}</Bundle-Name>
                 <Bundle-SymbolicName>${project.groupId}.${project.artifactId}</Bundle-SymbolicName>
@@ -253,8 +248,7 @@
                 <Bundle-Activator>${osgi.activator}</Bundle-Activator>
                 <Export-Service>${osgi.export.service}</Export-Service>
                 <Include-Resource>
-                  /META-INF/services/io.fabric8.kubernetes.client.ServiceToURLProvider=target/classes/META-INF/services/io.fabric8.kubernetes.client.ServiceToURLProvider,
-                  /META-INF/services/io.fabric8.kubernetes.client.ExtensionAdapter=target/classes/META-INF/services/io.fabric8.kubernetes.client.ExtensionAdapter
+                  /META-INF/services/io.fabric8.kubernetes.client.ServiceToURLProvider=target/classes/META-INF/services/io.fabric8.kubernetes.client.ServiceToURLProvider
                 </Include-Resource>
               </instructions>
               <classifier>bundle</classifier>

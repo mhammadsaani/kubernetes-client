@@ -18,52 +18,79 @@ package io.fabric8.kubernetes.client.utils;
 import io.fabric8.kubernetes.client.Config;
 import io.fabric8.kubernetes.client.http.BasicBuilder;
 import io.fabric8.kubernetes.client.http.HttpClient;
+import io.fabric8.kubernetes.client.http.HttpHeaders;
 import io.fabric8.kubernetes.client.http.HttpResponse;
 import io.fabric8.kubernetes.client.http.Interceptor;
 
 import java.net.HttpURLConnection;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Interceptor for handling expired OIDC tokens.
  */
 public class TokenRefreshInterceptor implements Interceptor {
-  
-  public static final String NAME = "TOKEN"; 
-  
+
+  public static final String NAME = "TOKEN";
+
   private final Config config;
   private HttpClient.Factory factory;
-  
+
+  private Instant lastRefresh;
+
   public TokenRefreshInterceptor(Config config, HttpClient.Factory factory) {
     this.config = config;
+    this.lastRefresh = Instant.now();
     this.factory = factory;
   }
-  
+
   @Override
-  public boolean afterFailure(BasicBuilder headerBuilder, HttpResponse<?> response) {
-    boolean resubmit = false;
-    if (response.code() == HttpURLConnection.HTTP_UNAUTHORIZED) {
-      String currentContextName = null;
-      String newAccessToken = null;
-
-      if (config.getCurrentContext() != null) {
-        currentContextName = config.getCurrentContext().getName();
-      }
-      Config newestConfig = Config.autoConfigure(currentContextName);
-      if (newestConfig.getAuthProvider() != null && newestConfig.getAuthProvider().getName().equalsIgnoreCase("oidc")) {
-        newAccessToken = OpenIDConnectionUtils.resolveOIDCTokenFromAuthConfig(newestConfig.getAuthProvider().getConfig(), factory.newBuilder());
-      } else {
-        newAccessToken = newestConfig.getOauthToken();
-      }
-
-      if (newAccessToken != null) {
-        // Delete old Authorization header and append new one
-        headerBuilder
-          .setHeader("Authorization", "Bearer " + newAccessToken);
-        config.setOauthToken(newAccessToken);
-        resubmit = true;
-      }
+  public void before(BasicBuilder headerBuilder, HttpHeaders headers) {
+    if (timeToRefresh()) {
+      refreshToken(headerBuilder);
     }
-    return resubmit;
   }
 
+  @Override
+  public CompletableFuture<Boolean> afterFailure(BasicBuilder headerBuilder, HttpResponse<?> response) {
+    if (response.code() == HttpURLConnection.HTTP_UNAUTHORIZED) {
+      return refreshToken(headerBuilder);
+    }
+    return CompletableFuture.completedFuture(false);
+  }
+
+  private CompletableFuture<Boolean> refreshToken(BasicBuilder headerBuilder) {
+    String currentContextName = null;
+    if (config.getCurrentContext() != null) {
+      currentContextName = config.getCurrentContext().getName();
+    }
+    CompletableFuture<String> newAccessToken;
+    Config newestConfig = Config.autoConfigure(currentContextName);
+    if (newestConfig.getAuthProvider() != null && newestConfig.getAuthProvider().getName().equalsIgnoreCase("oidc")) {
+      newAccessToken = OpenIDConnectionUtils.resolveOIDCTokenFromAuthConfig(newestConfig.getAuthProvider().getConfig(),
+          factory.newBuilder());
+    } else {
+      newAccessToken = CompletableFuture.completedFuture(newestConfig.getOauthToken());
+    }
+    return newAccessToken.thenApply(s -> {
+      if (s != null) {
+        // Delete old Authorization header and append new one
+        headerBuilder.setHeader("Authorization", "Bearer " + s);
+        config.setOauthToken(s);
+        lastRefresh = Instant.now();
+        return true;
+      }
+      return false;
+    });
+  }
+
+  private boolean timeToRefresh() {
+    return lastRefresh.plus(1, ChronoUnit.MINUTES).isBefore(Instant.now());
+  }
+
+  // For testing only
+  void setLastRefresh(Instant lastRefresh) {
+    this.lastRefresh = lastRefresh;
+  }
 }

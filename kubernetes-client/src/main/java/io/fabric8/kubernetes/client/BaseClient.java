@@ -16,63 +16,118 @@
 
 package io.fabric8.kubernetes.client;
 
-import io.fabric8.kubernetes.client.dsl.base.OperationSupport;
-import io.fabric8.kubernetes.client.http.HttpClient;
 import io.fabric8.kubernetes.api.model.APIGroup;
 import io.fabric8.kubernetes.api.model.APIGroupList;
 import io.fabric8.kubernetes.api.model.APIResourceList;
+import io.fabric8.kubernetes.api.model.GenericKubernetesResource;
+import io.fabric8.kubernetes.api.model.HasMetadata;
+import io.fabric8.kubernetes.api.model.KubernetesResource;
+import io.fabric8.kubernetes.api.model.KubernetesResourceList;
 import io.fabric8.kubernetes.api.model.RootPaths;
-import io.fabric8.kubernetes.client.utils.HttpClientUtils;
+import io.fabric8.kubernetes.client.KubernetesClientBuilder.ExecutorSupplier;
+import io.fabric8.kubernetes.client.dsl.MixedOperation;
+import io.fabric8.kubernetes.client.dsl.Resource;
+import io.fabric8.kubernetes.client.dsl.base.ResourceDefinitionContext;
+import io.fabric8.kubernetes.client.dsl.internal.HasMetadataOperationsImpl;
+import io.fabric8.kubernetes.client.dsl.internal.OperationContext;
+import io.fabric8.kubernetes.client.dsl.internal.OperationSupport;
+import io.fabric8.kubernetes.client.extension.ExtensionAdapter;
+import io.fabric8.kubernetes.client.extension.SupportTestingClient;
+import io.fabric8.kubernetes.client.http.HttpClient;
+import io.fabric8.kubernetes.client.utils.ApiVersionUtil;
 import io.fabric8.kubernetes.client.utils.Utils;
 
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.List;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.function.Predicate;
 
-public class BaseClient extends SimpleClientContext implements Client {
+public abstract class BaseClient implements Client {
+
+  /**
+   * An {@link ExecutorSupplier} that provides an unlimited thread pool {@link Executor} per client.
+   */
+  public static final ExecutorSupplier DEFAULT_EXECUTOR_SUPPLIER = new ExecutorSupplier() {
+
+    @Override
+    public Executor get() {
+      return Executors.newCachedThreadPool(Utils.daemonThreadFactory(this));
+    }
+
+    @Override
+    public void onClose(Executor executor) {
+      ((ExecutorService) executor).shutdownNow();
+    }
+
+  };
 
   public static final String APIS = "/apis";
 
   private URL masterUrl;
   private String apiVersion;
   private String namespace;
+  private Predicate<String> matchingGroupPredicate;
+  private final Adapters adapters;
+  private final Handlers handlers;
+  protected Config config;
+  protected HttpClient httpClient;
+  private OperationSupport operationSupport;
+  private ExecutorSupplier executorSupplier;
+  private Executor executor;
 
-  public BaseClient() {
-    this(new ConfigBuilder().build());
+  private OperationContext operationContext;
+
+  BaseClient(Config config, BaseClient baseClient) {
+    this.config = config;
+    this.httpClient = baseClient.httpClient;
+    this.adapters = baseClient.adapters;
+    this.handlers = baseClient.handlers;
+    this.matchingGroupPredicate = baseClient.matchingGroupPredicate;
+    this.executorSupplier = baseClient.executorSupplier;
+    this.executor = baseClient.executor;
+    setDerivedFields();
   }
 
-  public BaseClient(String masterUrl) {
-    this(new ConfigBuilder().withMasterUrl(masterUrl).build());
+  BaseClient(final HttpClient httpClient, Config config, ExecutorSupplier executorSupplier) {
+    this.config = config;
+    this.httpClient = httpClient;
+    this.handlers = new Handlers();
+    this.adapters = new Adapters(this.handlers);
+    setDerivedFields();
+    if (executorSupplier == null) {
+      executorSupplier = DEFAULT_EXECUTOR_SUPPLIER;
+    }
+    this.executorSupplier = executorSupplier;
+    this.executor = executorSupplier.get();
   }
 
-  public BaseClient(final Config config) {
-    this(HttpClientUtils.createHttpClient(config), config);
-  }
-
-  public BaseClient(final HttpClient httpClient, Config config) {
-    this(new SimpleClientContext(config, httpClient));
-  }
-  
-  public BaseClient(ClientContext clientContext) {
+  protected void setDerivedFields() {
+    this.namespace = config.getNamespace();
+    this.apiVersion = config.getApiVersion();
+    if (config.getMasterUrl() == null) {
+      throw new KubernetesClientException("Unknown Kubernetes master URL - " +
+          "please set with the builder, or set with either system property \"" + Config.KUBERNETES_MASTER_SYSTEM_PROPERTY
+          + "\"" +
+          " or environment variable \"" + Utils.convertSystemPropertyNameToEnvVar(Config.KUBERNETES_MASTER_SYSTEM_PROPERTY)
+          + "\"");
+    }
     try {
-      this.config = clientContext.getConfiguration();
-      this.httpClient = clientContext.getHttpClient();
-      adaptState();
-      this.namespace = config.getNamespace();
-      this.apiVersion = config.getApiVersion();
-      if (config.getMasterUrl() == null) {
-        throw new KubernetesClientException("Unknown Kubernetes master URL - " +
-          "please set with the builder, or set with either system property \"" + Config.KUBERNETES_MASTER_SYSTEM_PROPERTY + "\"" +
-          " or environment variable \"" + Utils.convertSystemPropertyNameToEnvVar(Config.KUBERNETES_MASTER_SYSTEM_PROPERTY) + "\"");
-      }
       this.masterUrl = new URL(config.getMasterUrl());
-    } catch (Exception e) {
+    } catch (MalformedURLException e) {
       throw KubernetesClientException.launderThrowable(e);
     }
   }
 
   @Override
-  public void close() {
+  public synchronized void close() {
     httpClient.close();
+    if (this.executorSupplier != null) {
+      this.executorSupplier.onClose(executor);
+      this.executorSupplier = null;
+    }
   }
 
   @Override
@@ -90,28 +145,75 @@ public class BaseClient extends SimpleClientContext implements Client {
     return namespace;
   }
 
-  @Override
-  public <C> Boolean isAdaptable(Class<C> type) {
-    ExtensionAdapter<C> adapter = Adapters.get(type);
-    if (adapter != null) {
-      return adapter.isAdaptable(this);
-    } else {
-      return false;
-    }
+  public void setMatchingGroupPredicate(Predicate<String> unsupportedApiGroups) {
+    this.matchingGroupPredicate = unsupportedApiGroups;
   }
 
   @Override
-  public <C> C adapt(Class<C> type) {
-    ExtensionAdapter<C> adapter = Adapters.get(type);
-    if (adapter != null) {
-      return adapter.adapt(this);
+  public boolean hasApiGroup(String apiGroup, boolean exact) {
+    if (matchingGroupPredicate != null) {
+      return matchingGroupPredicate.test(apiGroup);
     }
-    throw new IllegalStateException("No adapter available for type:" + type);
+    if (exact) {
+      return getApiGroup(apiGroup) != null;
+    }
+    APIGroupList apiGroups = getApiGroups();
+    if (apiGroups == null) {
+      return false;
+    }
+    return apiGroups
+        .getGroups()
+        .stream()
+        .anyMatch(g -> g.getName().endsWith(apiGroup));
+  }
+
+  @Override
+  public <C extends Client> Boolean isAdaptable(Class<C> type) {
+    // if type is an instanceof SupportTestingClient, then it's a proper
+    // test, otherwise it could be legacy support on an extension client
+    C toTest = adapt(type);
+    if (toTest instanceof SupportTestingClient) {
+      return ((SupportTestingClient) toTest).isSupported();
+    }
+    return true;
+  }
+
+  @Override
+  public <R extends KubernetesResource> boolean supports(Class<R> type) {
+    final String typeApiVersion = HasMetadata.getApiVersion(type);
+    if (matchingGroupPredicate != null) {
+      return matchingGroupPredicate.test(typeApiVersion);
+    }
+
+    final String typeKind = HasMetadata.getKind(type);
+    if (Utils.isNullOrEmpty(typeApiVersion) || Utils.isNullOrEmpty(typeKind)) {
+      return false;
+    }
+    final APIResourceList apiResources = getApiResources(ApiVersionUtil.joinApiGroupAndVersion(
+        HasMetadata.getGroup(type), HasMetadata.getVersion(type)));
+    if (apiResources == null) {
+      return false;
+    }
+    return apiResources.getResources()
+        .stream()
+        .anyMatch(r -> typeKind.equals(r.getKind()));
+  }
+
+  @Override
+  public <C extends Client> C adapt(Class<C> type) {
+    if (type.isAssignableFrom(this.getClass())) {
+      return (C) this;
+    }
+    ExtensionAdapter<C> adapter = adapters.get(type);
+    if (adapter == null) {
+      throw new IllegalStateException("No adapter available for type:" + type);
+    }
+    return adapter.adapt(this);
   }
 
   @Override
   public RootPaths rootPaths() {
-    return new OperationSupport(httpClient, config).restCall(RootPaths.class);
+    return getOperationSupport().restCall(RootPaths.class);
   }
 
   @Override
@@ -132,31 +234,104 @@ public class BaseClient extends SimpleClientContext implements Client {
 
   @Override
   public APIGroupList getApiGroups() {
-    return new OperationSupport(httpClient, config).restCall(APIGroupList.class, APIS);
+    return getOperationSupport().restCall(APIGroupList.class, APIS);
   }
 
   @Override
   public APIGroup getApiGroup(String name) {
-    return new OperationSupport(httpClient, config).restCall(APIGroup.class, APIS, name);
+    return getOperationSupport().restCall(APIGroup.class, APIS, name);
+  }
+
+  private OperationSupport getOperationSupport() {
+    if (operationSupport == null) {
+      this.operationSupport = new OperationSupport(this);
+    }
+    return this.operationSupport;
   }
 
   @Override
   public APIResourceList getApiResources(String groupVersion) {
-    return new OperationSupport(httpClient, config).restCall(APIResourceList.class, APIS, groupVersion);
+    if ("v1".equals(groupVersion)) {
+      return getOperationSupport().restCall(APIResourceList.class, "api", "v1");
+    }
+    return getOperationSupport().restCall(APIResourceList.class, APIS, groupVersion);
   }
 
   protected VersionInfo getVersionInfo(String path) {
-    return new OperationSupport(this.httpClient, this.getConfiguration()).restCall(VersionInfo.class, path);
+    return getOperationSupport().restCall(VersionInfo.class, path);
+  }
+
+  @Override
+  public <T extends HasMetadata, L extends KubernetesResourceList<T>, R extends Resource<T>> MixedOperation<T, L, R> resources(
+      Class<T> resourceType, Class<L> listClass, Class<R> resourceClass) {
+    if (GenericKubernetesResource.class.equals(resourceType)) {
+      throw new KubernetesClientException("resources cannot be called with a generic type");
+    }
+    if (resourceType.isInterface()) {
+      throw new IllegalArgumentException("resources cannot be called with an interface");
+    }
+    try {
+      // TODO: check the Resource class type
+      return handlers.getOperation(resourceType, listClass, this);
+    } catch (Exception e) {
+      //may be the wrong list type, try more general - may still fail if the resource is not properly annotated
+      if (resourceClass == null || Resource.class.equals(resourceClass)) {
+        return (MixedOperation<T, L, R>) newHasMetadataOperation(ResourceDefinitionContext.fromResourceType(resourceType),
+            resourceType, listClass);
+      }
+      throw KubernetesClientException.launderThrowable(e);
+    }
+  }
+
+  public <T extends HasMetadata, L extends KubernetesResourceList<T>> HasMetadataOperationsImpl<T, L> newHasMetadataOperation(
+      ResourceDefinitionContext rdContext, Class<T> resourceType, Class<L> listClass) {
+    return new HasMetadataOperationsImpl<>(this, rdContext, resourceType, listClass);
+  }
+
+  @Override
+  public Config getConfiguration() {
+    return config;
+  }
+
+  @Override
+  public HttpClient getHttpClient() {
+    return httpClient;
+  }
+
+  public Adapters getAdapters() {
+    return adapters;
+  }
+
+  public Handlers getHandlers() {
+    return handlers;
   }
 
   /**
-   * For subclasses to adapt the client state
+   * Return the default operation context
    */
-  protected void adaptState() {
-    // nothing by default
+  public OperationContext getOperationContext() {
+    return operationContext;
   }
-  
-  protected SimpleClientContext newState(Config updated) {
-    return new SimpleClientContext(updated, httpClient);
+
+  public BaseClient operationContext(OperationContext operationContext) {
+    this.operationContext = operationContext;
+    return this;
   }
+
+  /**
+   * Create a new instance with the given config. All other client resources will be shared.
+   *
+   * @param config
+   * @return
+   */
+  abstract BaseClient newInstance(Config config);
+
+  public Client newClient(OperationContext newContext) {
+    return newInstance(config).operationContext(newContext);
+  }
+
+  public Executor getExecutor() {
+    return executor;
+  }
+
 }

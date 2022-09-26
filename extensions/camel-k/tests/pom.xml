@@ -21,7 +21,7 @@
   <parent>
     <groupId>io.fabric8</groupId>
     <artifactId>camel-k-extension-pom</artifactId>
-    <version>6.0-SNAPSHOT</version>
+    <version>6.2-SNAPSHOT</version>
   </parent>
 
   <artifactId>camel-k-tests</artifactId>
@@ -36,8 +36,7 @@
 
     <dependency>
       <groupId>io.fabric8</groupId>
-      <artifactId>camel-k-mock</artifactId>
-      <version>${project.version}</version>
+      <artifactId>kubernetes-server-mock</artifactId>
       <scope>test</scope>
     </dependency>
 
@@ -51,6 +50,11 @@
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter-engine</artifactId>
       <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
     </dependency>
 
     <dependency>

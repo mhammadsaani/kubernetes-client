@@ -15,32 +15,39 @@
  */
 package io.fabric8.java.generator.nodes;
 
-import static io.fabric8.java.generator.nodes.Keywords.JAVA_UTIL_LIST;
-
-import com.github.javaparser.ast.CompilationUnit;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
+import io.fabric8.java.generator.Config;
+
+import static io.fabric8.java.generator.nodes.Keywords.JAVA_UTIL_LIST;
 
 public class JArray extends AbstractJSONSchema2Pojo {
 
-    private final String type;
-    private final AbstractJSONSchema2Pojo nested;
+  private final String type;
+  private final AbstractJSONSchema2Pojo nested;
 
-    public JArray(AbstractJSONSchema2Pojo nested) {
-        this.type =
-                new ClassOrInterfaceType()
-                        .setName(JAVA_UTIL_LIST)
-                        .setTypeArguments(new ClassOrInterfaceType().setName(nested.getType()))
-                        .toString();
-        this.nested = nested;
-    }
+  public JArray(AbstractJSONSchema2Pojo nested, Config config, String description, final boolean isNullable,
+      JsonNode defaultValue) {
+    super(config, description, isNullable, defaultValue, null);
+    this.type = new ClassOrInterfaceType()
+        .setName(JAVA_UTIL_LIST)
+        .setTypeArguments(new ClassOrInterfaceType().setName(nested.getType()))
+        .toString();
+    this.nested = nested;
+  }
 
-    @Override
-    public String getType() {
-        return this.type;
-    }
+  @Override
+  public String getType() {
+    return this.type;
+  }
 
-    @Override
-    public GeneratorResult generateJava(CompilationUnit cu) {
-        return nested.generateJava(cu);
-    }
+  @Override
+  protected String getClassType() {
+    return JAVA_UTIL_LIST;
+  }
+
+  @Override
+  public GeneratorResult generateJava() {
+    return nested.generateJava();
+  }
 }
