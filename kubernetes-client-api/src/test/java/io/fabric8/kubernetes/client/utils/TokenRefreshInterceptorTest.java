@@ -16,10 +16,14 @@
 package io.fabric8.kubernetes.client.utils;
 
 import io.fabric8.kubernetes.client.Config;
+import io.fabric8.kubernetes.client.ConfigBuilder;
 import io.fabric8.kubernetes.client.http.HttpClient;
 import io.fabric8.kubernetes.client.http.HttpRequest;
+import io.fabric8.kubernetes.client.http.StandardHttpRequest;
 import io.fabric8.kubernetes.client.http.TestHttpResponse;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 
 import java.io.File;
@@ -33,7 +37,11 @@ import java.util.Objects;
 import static io.fabric8.kubernetes.client.Config.KUBERNETES_AUTH_SERVICEACCOUNT_TOKEN_FILE_SYSTEM_PROPERTY;
 import static io.fabric8.kubernetes.client.Config.KUBERNETES_AUTH_TRYKUBECONFIG_SYSTEM_PROPERTY;
 import static io.fabric8.kubernetes.client.Config.KUBERNETES_KUBECONFIG_FILE;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.CALLS_REAL_METHODS;
+import static org.mockito.Mockito.mockStatic;
 
 /**
  * Ignoring for now - the token refresh should be based upon the java 11 client or the provided client library and not okhttp
@@ -52,7 +60,7 @@ class TokenRefreshInterceptorTest {
       HttpRequest.Builder builder = Mockito.mock(HttpRequest.Builder.class, Mockito.RETURNS_SELF);
 
       // Call
-      boolean reissue = new TokenRefreshInterceptor(Config.autoConfigure(null), null)
+      boolean reissue = new TokenRefreshInterceptor(Config.autoConfigure(null), null, Instant.now())
           .afterFailure(builder, new TestHttpResponse<>().withCode(401)).get();
       Mockito.verify(builder).setHeader("Authorization", "Bearer token");
       assertTrue(reissue);
@@ -74,16 +82,64 @@ class TokenRefreshInterceptorTest {
       HttpRequest.Builder builder = Mockito.mock(HttpRequest.Builder.class, Mockito.RETURNS_SELF);
 
       // Call
-      TokenRefreshInterceptor tokenRefreshInterceptor = new TokenRefreshInterceptor(Config.autoConfigure(null), null);
+      TokenRefreshInterceptor tokenRefreshInterceptor = new TokenRefreshInterceptor(Config.autoConfigure(null),
+          null,
+          Instant.now().minus(61, ChronoUnit.SECONDS));
+
       // Replace kubeconfig file
       Files.copy(Objects.requireNonNull(getClass().getResourceAsStream("/token-refresh-interceptor/kubeconfig.new")),
           Paths.get(tempFile.getPath()), StandardCopyOption.REPLACE_EXISTING);
-      tokenRefreshInterceptor.setLastRefresh(Instant.now().minus(61, ChronoUnit.SECONDS));
       tokenRefreshInterceptor.before(builder, null);
       Mockito.verify(builder).setHeader("Authorization", "Bearer new token");
     } finally {
       // Remove any side effect
       System.clearProperty(KUBERNETES_KUBECONFIG_FILE);
+    }
+  }
+
+  @Test
+  @DisplayName("#4442 token auto refresh should not overwrite existing token when not applicable")
+  void refreshShouldNotOverwriteExistingToken() throws Exception {
+    try (MockedStatic<Config> configMock = mockStatic(Config.class, CALLS_REAL_METHODS)) {
+      // Given
+      final Config autoConfig = new ConfigBuilder(Config.empty())
+          .withOauthToken("") // empty token
+          .build();
+      configMock.when(() -> Config.autoConfigure(any())).thenReturn(autoConfig);
+      final Config config = new ConfigBuilder(Config.empty())
+          .withOauthToken("existing-token")
+          .build();
+      final TokenRefreshInterceptor tokenRefreshInterceptor = new TokenRefreshInterceptor(
+          config, null, Instant.now().minusSeconds(61));
+      // When
+      final boolean result = tokenRefreshInterceptor
+          .afterFailure(new StandardHttpRequest.Builder(), new TestHttpResponse<>().withCode(401)).get();
+      // Then
+      assertThat(result).isFalse();
+      assertThat(config).hasFieldOrPropertyWithValue("oauthToken", "existing-token");
+    }
+  }
+
+  @Test
+  @DisplayName("#4442 token auto refresh should  overwrite existing token when applicable")
+  void refreshShouldOverwriteExistingToken() throws Exception {
+    try (MockedStatic<Config> configMock = mockStatic(Config.class, CALLS_REAL_METHODS)) {
+      // Given
+      final Config autoConfig = new ConfigBuilder(Config.empty())
+          .withOauthToken("new-token")
+          .build();
+      configMock.when(() -> Config.autoConfigure(any())).thenReturn(autoConfig);
+      final Config config = new ConfigBuilder(Config.empty())
+          .withOauthToken("existing-token")
+          .build();
+      final TokenRefreshInterceptor tokenRefreshInterceptor = new TokenRefreshInterceptor(
+          config, null, Instant.now().minusSeconds(61));
+      // When
+      final boolean result = tokenRefreshInterceptor
+          .afterFailure(new StandardHttpRequest.Builder(), new TestHttpResponse<>().withCode(401)).get();
+      // Then
+      assertThat(result).isTrue();
+      assertThat(config).hasFieldOrPropertyWithValue("oauthToken", "new-token");
     }
   }
 
@@ -100,7 +156,7 @@ class TokenRefreshInterceptorTest {
       HttpRequest.Builder builder = Mockito.mock(HttpRequest.Builder.class, Mockito.RETURNS_SELF);
 
       // The expired token will be read at auto configure.
-      TokenRefreshInterceptor interceptor = new TokenRefreshInterceptor(Config.autoConfigure(null), null);
+      TokenRefreshInterceptor interceptor = new TokenRefreshInterceptor(Config.autoConfigure(null), null, Instant.now());
 
       // Write new value to token file to simulate renewal.
       Files.write(tokenFile.toPath(), "renewed".getBytes());
@@ -140,7 +196,8 @@ class TokenRefreshInterceptorTest {
       Files.copy(Objects.requireNonNull(getClass().getResourceAsStream("/token-refresh-interceptor/kubeconfig-oidc")),
           Paths.get(tempFile.getPath()), StandardCopyOption.REPLACE_EXISTING);
 
-      TokenRefreshInterceptor interceptor = new TokenRefreshInterceptor(config, Mockito.mock(HttpClient.Factory.class));
+      TokenRefreshInterceptor interceptor = new TokenRefreshInterceptor(config, Mockito.mock(HttpClient.Factory.class),
+          Instant.now());
       boolean reissue = interceptor.afterFailure(builder, new TestHttpResponse<>().withCode(401)).get();
 
       // Make the call and check that renewed token was read at 401 Unauthorized.
